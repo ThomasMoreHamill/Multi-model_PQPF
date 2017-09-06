@@ -19,6 +19,8 @@ from mpl_toolkits.basemap import interp
 import os
 import time as timey
 
+data_directory = '/Projects/Reforecast2/netcdf/NationalBlend/'
+
 # --- queries from command line
 
 cyyyymmddhh = sys.argv[1]  # the initial date/time of the forecast
@@ -43,8 +45,10 @@ iyyyymmddh_anal_begin = int(dateshift(cyyyymmddhh,ileadb))
 # ---- read in ccpa precip analysis data for this date 
 #      (12-h accum, generated from two 6-hourly files)
 
-infilename = '/data/thamill/Rf2_tests/ccpa_v1/precip_analyses_ccpa_v1_'+\
+infilename = data_directory + 'precip_analyses_ccpa_v1_'+\
             '2002010100_to_2016123100.nc'
+#infilename = '/data/thamill/Rf2_tests/ccpa_v1/precip_analyses_ccpa_v1_'+\
+#            '2002010100_to_2016123100.nc'
 print infilename
 nc = Dataset(infilename)
 yyyymmddhh_anal_list = nc.variables['yyyymmddhh_anal_end'][:]
@@ -67,15 +71,14 @@ pmax_anal = np.max(apcp_anal)
 # ---- read in the forecast data for this date, and for the date 12 h previous
 #      then subtract to get accumulated precip during this period
     
-infile = '/Users/thamill/precip/ecmwf_data/'+center+'_'+\
-    cyyyymmddhh+'_leadtime'+cleade+'h.nc'
+infile = data_directory+center+'_'+cyyyymmddhh+'_leadtime'+cleade+'h.nc'
 print infile
 nc2 = Dataset(infile)
 apcp_fcst_ens_late = nc2.variables['apcp_fcst_ens'][:,:,:] # mbr,x,y
 nc2.close()
     
 cleadb = str(int(cleade)-12)
-infile = '/Users/thamill/precip/ecmwf_data/'+center+'_'+\
+infile = data_directory+center+'_'+\
     cyyyymmddhh+'_leadtime'+cleadb+'h.nc'
 print infile
 nc2 = Dataset(infile)
@@ -141,8 +144,10 @@ if pmax_anal >= 0 and pmax_fcst >=0 :
 
 # ---- open and initialize the netCDF file we'll be writing to.
 
-outfilename = '/Users/thamill/precip/ecmwf_data/'+center+\
+outfilename = data_directory+center+\
     '_D_statistics_data_IC'+cyyyymmddhh+'_'+cleade+'h.nc'
+#outfilename = '/Users/thamill/precip/ecmwf_data/'+center+\
+#    '_D_statistics_data_IC'+cyyyymmddhh+'_'+cleade+'h.nc'
 print 'writing to ',outfilename
 rootgrp = Dataset(outfilename,'w',format='NETCDF4_CLASSIC')
     
