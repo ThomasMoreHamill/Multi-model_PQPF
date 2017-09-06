@@ -1,0 +1,11 @@
+
+FFLAGS77 = -c -C -O4 -m64 -fbounds-check
+FFLAGS   = -C -O4 -m64 -fbounds-check
+FFLAGSC   = -c -C -O4 -m64 -fbounds-check
+FC = gfortran
+LIB = -L/usr/local/gfortran/lib
+LIB2 = -L/opt/local/lib
+INC = -I/usr/local/gfortran/include
+
+all:
+	$(FC) $(FFLAGS)  $(INC) -o blend_precip_singlemodel_dressed_gammacdf.x blend_precip_singlemodel_dressed_gammacdf.f90 check.f90 read_precip_climatology_multi_thresh.f90 read_forecasts_local.f90 raw_ensemble_probs_singlemodel.f90 determine_gamma_parameters_for_quantile_mapping.f90 control_quantile_mapping_singlemodel_gamma.f90 ensemble_probs_x25_singlemodel.f90 read_closest_histogram_singlemodel.f90 read_dressing_parameters_singlemodel.f90 ensemble_probs_dressweight_x25.f90 quantile_map_x25_gamma2.f90 write_output_to_netcdf.f90 determine_category.f90 determine_precip_value_category.f90 doy.f updat.f gasdev.f ran1.f sort.f cumgam.f90 gamma_inc.f90 error_f.f90 error_fc.f90 rlog.f90 rexp.f90 exparg.f90 gam1.f90 ipmpar.f90 cumnor.f90 r8_swap.f90 qnorm.f90 pnorm.f90 dnorm.f90 gamma.f90 pgamma.f90 dgamma.f90 qgamma.f90 $(LIB) $(LIB2) -lnetcdf -lhdf5 -lhdf5_hl -lnetcdff
