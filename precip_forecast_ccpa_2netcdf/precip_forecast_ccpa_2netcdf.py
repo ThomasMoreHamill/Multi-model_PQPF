@@ -38,7 +38,9 @@ cleade = sys.argv[2] # use 24 for 24 h end time, not 024
 
 # ---- read in sample forecast in order to define the forecast lat/lon array
 
-infilename = '/Users/thamill/precip/ecmwf_data/ECMWF_2016010100_fhour12_pertno1.grb'
+data_directory = '/Users/thamill/precip/ecmwf_data/'
+#data_directory = '/Projects/Reforecast2/netcdf/NationalBlend/'
+infilename = data_directory + 'ECMWF_2016010100_fhour12_pertno1.grb'
 grib = pygrib.open(infilename)
 grb2 = grib.select()[0]
 latsf, lonsf = grb2.latlons()
@@ -64,7 +66,7 @@ else:
 
 # ---- read in sample conus mask, lat, lon
 
-infile = '/Users/thamill/precip/conusmask_ccpa.nc'
+infile = data_directory + 'conusmask_ccpa.nc'
 nc = Dataset(infile)
 conusmask_in = nc.variables['conusmask'][:,:]
 lons = nc.variables['lons'][:,:]
@@ -78,7 +80,8 @@ for idate, date in zip(range(ndates), date_list):
 
     # --- set up the output netCDF file information
     
-    outfile = '/Users/thamill/precip/ecmwf_data/'+center+'_'+date+'_leadtime'+cleade+'h.nc'
+    outfile = data_directory +center+'_'+date+'_leadtime'+cleade+'h.nc'
+    
     print outfile, timey.asctime()
     rootgrp = Dataset(outfile,'w',format='NETCDF4_CLASSIC')
     
