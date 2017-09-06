@@ -101,7 +101,7 @@
 #      physical distance.
 # 
 #      Supplemental locations on the 1/8-degree grid 
-#      for a given month 01-12 were computed with
+#      for a given month 01-12 were computed with (in supplocns folder)
 
 compute_precip_analog_locations_ccpa9.x mm
 
