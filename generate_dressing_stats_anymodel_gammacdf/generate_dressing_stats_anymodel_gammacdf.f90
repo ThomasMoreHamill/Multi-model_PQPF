@@ -29,8 +29,10 @@ REAL, PARAMETER :: thresh_high = 10.0 ! divider amount between closest histogram
 REAL, PARAMETER, DIMENSION(nout_thresh) :: &
      output_threshes = (/0.254,1.0,2.5,5.0,10.0,25.0,50.0/) ! PQPFs generated for these amounts.
      
-CHARACTER*256, PARAMETER :: data_directory = '/Users/thamill/precip/ecmwf_data/'
-! where I kept all the data 
+CHARACTER*256, PARAMETER :: data_directory = '/Projects/Reforecast2/netcdf/NationalBlend/'
+! where I kept all the data; this is on ftp.cdc.noaa.gov
+!'/Users/thamill/precip/ecmwf_data/'
+
 
 INTEGER :: nstride ! number of grid pts between samples in 3x3 stencil
 
