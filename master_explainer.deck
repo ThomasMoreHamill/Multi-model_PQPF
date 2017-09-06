@@ -1,0 +1,311 @@
+#!/bin/tcsh
+
+# ============================================================
+# point of contact: Tom Hamill, tom.hamill@noaa.gov, 
+# +1 (303) 497-3060.
+#
+# This documentation is for a (mostly) new way of achieving well-
+# calibrated, statistically postprocessed forecasts of 
+# probabilistic precipitation amount based on multi-model
+# ensemble guidance, trained against gridded precipitation
+# analyses.
+#
+# To understand this revised algorithm you will need to understand 
+# its predecessor.  This is described in Hamill et al. 
+# (2017; https://doi.org/10.1175/MWR-D-16-0331.1) 
+#
+# This skeleton script is intended to show NOAA partners the 
+# components I have put together to generate improved statistically 
+# post-processed probabilistic forecasts of precipitation.    
+# Several big changes for this version relative to the 
+# previous one documented above include:
+# 
+# (a) a new way of generating the underlying CDFs used for 
+# quantile mapping that should dramatically save storage space, 
+# making it easier to incorporate new models without saving
+# massive amounts of data on disk.  CDFs are estimated with
+# three parameters, a fraction of samples with zero precipitation
+# and a classical Gamma distribution with shape and scale 
+# parameters.   Distributions vary with forecast lead time,
+# physical location, and are based on the last 60 days of 
+# precipitation forecasts and analyses, with sample size
+# enlarged via "supplemental locations."
+#
+# (b) the processing of the forecasts model-by-model, as 
+# opposed to all the forecast data being combined.  Subsequent 
+# to the step of processing each model individually, there 
+# is a new step to linearly combine probabilities from the 
+# constituent systems to form the final multi-model ensemble
+# forecast. 
+#
+# (c) an objective, data-defined procedure for dressing the 
+# (quantile-mapped) member forecasts with Gamma distributions
+# kernels of probability density.  This was inspired by 
+# the Vincent Fortin article on improved dressing of ensembles.
+# (http://onlinelibrary.wiley.com/doi/10.1256/qj.05.167/abstract)
+#
+# (d) removal of Savitzky-Golay spatial smoothing of output
+# probability fields used in the previous version, based on  
+# user feedback requesting more spatial detail in the 
+# mountainous western US.  
+#
+# (e) use of a 5x5 stencil of surrounding grid points instead 
+# of the previous 3x3 stencil when quantile mapping, both to  
+# ameliorate sampling error, and partially obviate the need  
+# for the Savitzky-Golay smoothing.
+#
+# (f) implicitly, the generation of a full PQPF.  The user can
+# revise the code to store out exceedance probability forecasts 
+# for any desired precipitation amount.   Currently the code
+# stores 0.254 (POP), 1.0, 2.5, 5.0, 10.0, and 25.0 mm threshold
+# probabilities.
+#
+# The code that is described here is not shrink-wrapped and 
+# ready for use with the anticipated higher-resolution 2.5-km 
+# data desired at NOAA MDL with next-generation products.  Given 
+# that adaptation will be needed anyway, I instead aimed to go  
+# through the sequence of processing I performed to generate
+# forecasts at the current 1/8-degree grid spacing.  MDL, or 
+# other users hopefully can take the components and adapt
+# them to the locations and grids of their choosing.
+#
+# My hope is that it with this documentation and associated
+# Powerpoints, is easy enough to see the functionalities
+# of the new software, and it can be integrated with other
+# improvements such as the use of higher-resolution training
+# data.
+#
+# Comment for NOAA MDL only:
+# -------------------------
+# One complication relative to operations is that for my own 
+# convenience, but to MDL's detriment, I moved my data processing
+# back to the smaller 464x224 grid of the CCPA precipitation
+# analyses, barely covering the CONUS.   MDL staff will 
+# have to back that out as you adapt code.
+# Presumably this isn't as much of an issue as you have to 
+# adapt code for the higher-resolution 2.5-degree data.
+#
+# Questions?  Tom Hamill, tom.hamill@noaa.gov, (303) 497-3060
+#
+# ============================================================
+#
+# ---- Before any processing of the forecast data is performed,
+#      "supplemental locations" need to be pre-determined.   When 
+#      statistically postprocessing any particular (i,j) grid
+#      point, the supplemental locations for (i,j) are a list of
+#      other (i', j') locations that are used to supplement
+#      the training data at (i,j).  Per the journal article
+#      cited in the documentation above, the supplemental
+#      locations are based upon the similarity of precipitation
+#      climatology, terrain height, terrain orientation, and
+#      physical distance.
+# 
+#      Supplemental locations on the 1/8-degree grid 
+#      for a given month 01-12 were computed with
+
+compute_precip_analog_locations_ccpa9.x mm
+
+#      where mm is the month.  MDL: for supplemental locations on
+#      the 2.5-km NDFD grid, you'll need to have generated
+#      the CCPA 1/8-degree grid locations already, then
+#      execute 
+
+create_supp_locns_ndfd2p5_monthly.x mm
+
+#      The supplemental locations code is one component that 
+#      I may well change.  In particular, consistent with other
+#      parts of the postprocessing code, in the future I may
+#      change the code to use precipitation climatologies based
+#      on fitted Gamma distributions.  Stay tuned
+#
+#
+# ---- Note that I started this lastest PQPF development
+#      process by copying over an earlier version
+#      of National Blend software from NOAA's theia 
+#      supercomputer and then modifying it so that I could add 
+#      new aspects such as including ECMWF data.  A preliminary 
+#      step was performed where I downloaded NCEP, ECMWF, and
+#      CMC ensemble data from the ECMWF TIGGE forecast
+#      web site, where I believe the data was first saved at
+#      1/2-degree grid spacing around the CONUS.   According
+#      to a personal conversation with Roberto Buizza
+#      of ECMWF, it's likely that the procedure there
+#      for providing data on a grid of choice is to
+#      just take the nearest grid point's value on the
+#      model's native grid.   This probably introduced
+#      some inaccuracy relative to what MDL may have
+#      with its interpoation procedures.
+#  
+#      TIGGE data was downloaded in grib format.   I provide no
+#      scripts or code for this download part of my processing,
+#      as what other potential partners will do is different.
+
+# ---- The input grib files were then split up, so
+#      that the data was separated by system (CMC, NCEP,
+#      ECMWF ensembles), by lead time, and by initial
+#      condition date and hour.   This was achieved 
+#      with the python script
+
+python gribfile_split.py infilename 
+
+#      where infilename is the input grib file name to
+#      split up.  Data was output in grib files.
+
+# ---- The script below moves the data from grib files to 
+#      netCDF files at 1/8-degree spacing over the CONUS for 
+#      a range of dates specified in the script.   Say I was  
+#      interested in archiving in netCDF the sample forecasts  
+#      for 12 and 24 h for the ECMWF system, which I'd need
+#      to calculate the accumulated precipitation in the 12-24 
+#      h period.  I'd generate such files with the following:
+
+python precip_forecast_ccpa_2netcdf.py ECMWF 12
+python precip_forecast_ccpa_2netcdf.py ECMWF 24
+
+# ---- In this version of the code, we are simplifying the quantile
+#      mapping drastically in order to save disk space (lots!).  
+#      The previous postprocessing saved out forecast and analyzed CDFs at
+#      lots of pre-defined precipitation amounts.   The new algorithm
+#      will estimate the forecast and analyzed distributions with
+#      three parameters, a fraction zero (the fraction of the time
+#      where the forecast or analyzed precipitation is zero) and then
+#      for positive amounts, a Gamma shape and scale parameter.  
+#      
+#      The high-level idea to save space is this: once analyzed data is 
+#      available, for a given case day, we will read in analyzed and  
+#      forecast data and then write out synthesized information for   
+#      that day.  At a later point, we can quickly read in the 60 days of 
+#      synthesized information for calculating the three parameters.
+#      We will generate a fraction zero and the estimated parameters
+#      of the forecast and analyzed Gamma distributions (using 
+#      supplemental locations). 
+# 
+#      But that collation step is yet to come.  The step at hand is 
+#      writing out the synthesized information for a given case day.  
+#      To understand this part, you need the Wilks "Statistical Methods  
+#      in the Atmospheric Sciences" textbook.   Look up the section on
+#      Gamma distributions (in chapter 4, in my version, 3rd Ed.).
+#      Gamma distributions are valid only for positive numbers, 
+#      and precipitation can obviously be zero.   Hence, we aim to 
+#      save the information on this day necessary at a later point to
+#      estimate the precipitation CDF with three parameters: (1) the  
+#      fraction of samples with zero precipitation, and (2) for positive 
+#      precipitation, the Gamma shape parameter (alpha), and (3) for 
+#      positive precipitation, the Gamma scale parameter (beta). In 
+#      the Wilks text, there is no mention of "fraction zero."
+#      This we will estimate simply, by just keeping track, grid
+#      point by grid point, of the number of points with zero and
+#      nonzero precipitation.  Later, we'll accumulate information
+#      over many days and estimate the fraction zero from relative
+#      frequency.   The Gamma shape and scale parameters are more
+#      complicated.  There is a section in the Wilks text on using 
+#      the D statistic, D = ln(xbar) - (1/n)sum(ln(xi)).  What we 
+#      are going to do to simplify the calculations is to save out 
+#      the information needed to calculate D at a later point, with
+#      data summed over many case days and including supplemental 
+#      location's data.  We'll need to save information to calculate
+#      at a later point the mean precipitation (xbar) and the sum of
+#      logarithm of the members' precipitation amounts (ln(xi)).
+
+#      To synthesize statistics for a particular day, model, and 
+#      forecast lead time, enter something like the following:   
+
+python compute_singleday_gamma_stats.py 2016010100 ECMWF 24
+
+# ---- Gamma distributions are used in two ways; to estimate the
+#      forecast and analyzed precipitation amounts for quantile
+#      mapping, and also to estimate the dressing distributions,
+#      i.e., the kernels of probability that are applied to every 
+#      quantile-mapped member.  We need to estimate these 
+#      dressing distributions.   We generate these with 60 days
+#      of quantile-mapped forecasts.   To do a preliminary
+#      quantile mapping of the forecast and then generate
+#      dressing information for one of the 60 prior days, we'd
+#      exectute a fortran program for that model, number of members, 
+#      day, and forecast lead time.   This is accomplished with 
+#      something like 
+
+generate_dressing_stats_anymodel_gammacdf.x  ECMWF 50 2016033100 24
+
+#      Data above is written to a netcdf file.  This file contains
+#      intermediate information like the closest-histogram statistics
+#      for a given day, and (see notes above) the intermediate
+#      information necessary to calculate the D statistics for dressing.
+#      Note that this same program above will have to be run many times 
+#      over.   When we actually get to the processing, say, of
+#      2016040100 data, presumably the program above will have been
+#      already run for each of the preceding 60 days.  The good thing
+#      in a production environment, though, is that as you proceed on to
+#      the next day, 2016040200, the only thing you'll have to do
+#      is to generate error statistics now for 2016040100; all the
+#      previous dates will already have been generated and presumably
+#      are sitting there on disk waiting to be used.  This will
+#      speed up the data processing considerably.
+
+#      Let's assume now that generate_dressing_stats_anymodel_gammacdf.x
+#      has been run for each of the previous 60 days.  Before we
+#      generate a post-processed forecast, we're going to synthesize
+#      that information from the previous 60 days.   This is achieved
+#      by the python script.  Below, you enter the model name and 
+#      ending lead time of the forecast.   This script is hard-coded 
+#      to read in a special range of dates; you'll need to change that
+#      to enter the range of dates yourself.  The output are two
+#      netCDF files with dressing statistics that are read in by the
+#      final program that generates the forecasts.
+
+python dressing_statistics_to_netcdf.py ECMWF 24
+
+# ---- now we actually generate forecasts, quantile mapping
+#      a given member and then dressing it with Gamma-distributed
+#      noise. This is accomplished by running the program
+
+blend_precip_singlemodel_dressed_gammacdf.x 2016040100 24 ECMWF
+
+#      with the three items above on the command line indicating the 
+#      initial date, the forecast lead time, and the system. This
+#      program will do the statistical postprocessing for a given
+#      model, quantile mapping the forecasts (using CDFs for 
+#      analyzed and forecast data using Gamma distributions as
+#      described above), and in the process expanding the ensemble
+#      twenty-five-fold by using surrounding grid points.  It
+#      also dresses the quantile-mapped forecasts with 
+#      Gamma-distributed noise, estimates exceedance probabilities
+#      for several thresholds, and saves out the forecast 
+#      probabilities to a netCDF file.
+
+
+# ---- the final step in the forecast process would be
+#      the weighted linear combination of post-processed
+#      probabilistic forecasts.   An ad-hoc example of
+#      how this is done is shown in the following scripts
+#      which both blends forecasts and verifies them.
+#      In this example, I weighted the final product as 50%
+#      ECMWF, 25% NCEP and 25% CMC.   In general, it's best to
+#      assign some error statistic to each postprocessed forecast 
+#      and then estimate the probabilities objectively with 
+#      a least-squares estimation procedure.  
+#
+#      To produce verification statistics with and without
+#      blending of forecasts, execute the python script
+
+python plot_reliability_mme.py 24 POP
+python plot_reliability_mme.py 24 10.0
+
+#      where in this case 24 is the forecast lead in hours,
+#      and POP or 10.0 indicates the precipitation threshold
+#      of interest (POP in the US is 0.254 mm).
+#
+# ---- Plotting scripts may be of interest.   To plot a 
+#      single model's forecast at various stages of
+#      postprocessing, try display_prob_forecasts_singlemodel.py.
+#      For example, to display ECMWF's forecasts for 1 April 2016,
+#      12-24 h lead, and the POP amount (0.254 mm) use the 
+#      following:
+
+python display_prob_forecasts_singlemodel.py 2016040100 ECMWF 24 POP
+
+# ---- If one was interested in plotting individual models'
+#      post-processed forecast guidance in addition to the 
+#      model blend (25% NCEP, 25% CMC, 50% ECMWF) then try
+
+display_prob_forecasts_mme.py 
