@@ -308,4 +308,4 @@ python display_prob_forecasts_singlemodel.py 2016040100 ECMWF 24 POP
 #      post-processed forecast guidance in addition to the 
 #      model blend (25% NCEP, 25% CMC, 50% ECMWF) then try
 
-display_prob_forecasts_mme.py 
+display_prob_forecasts_mme.py 2016040100 24 POP
