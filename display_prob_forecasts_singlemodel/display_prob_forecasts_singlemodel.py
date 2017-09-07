@@ -16,7 +16,6 @@ import numpy as np
 from numpy import ma
 import os, sys
 from dateutils import daterange, dateshift, dayofyear, splitdate
-from read_prob_forecasts_weighted import read_prob_forecasts_weighted
 
 # --- setting up font sizes for the display
 
@@ -25,6 +24,8 @@ rcParams['legend.fancybox']=True
 rcParams['xtick.labelsize']='small'
 rcParams['axes.labelsize']='small'
 rcParams['contour.negative_linestyle']='solid'
+
+data_directory = '/Projects/Reforecast2/netcdf/NationalBlend/'
 
 # ---- read inputs from command line
 
@@ -69,44 +70,31 @@ cmonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','De
 cmonth = cmonths[mm-1]
 iyyyymmddhh = int(cyyyymmddhh)
 
-
 # ---- read in precipitation analysis
 
-nxa = 464
-nya = 224
-apcp_anal_t = np.zeros((nya,nxa), dtype=np.float32)
+filename= data_directory + 'precip_analyses_ccpa_v1_2002010100_to_2016123100.nc'
+print 'reading ',filename
+nc = Dataset(filename)
+lats_anal = nc.variables['lats_anal'][:]
+lons_anal = nc.variables['lons_anal'][:]
+nya, nxa = np.shape(lats_anal)
+iyyyymmddhh_list = nc.variables['yyyymmddhh_anal_end'][:]
+cyyyymmddhh_list = str(iyyyymmddhh_list)
+cdate_anal_late = dateshift(cyyyymmddhh, ileade)
+cdate_anal_early = dateshift(cyyyymmddhh, ileade-6)
+idate_anal_late = int(cdate_anal_late)
+idate_anal_early = int(cdate_anal_early)
+idx_late = np.where(iyyyymmddhh_list == idate_anal_late)[0]
+idx_early = np.where(iyyyymmddhh_list == idate_anal_early)[0]
+print 'idx_late, idx_early = ', idx_late, idx_early 
+apcp_anal = nc.variables['apcp_anal'][idx_late[0],:,:] + \
+    nc.variables['apcp_anal'][idx_early[0],:,:]
 mninetynine = -99.99*np.ones((nya,nxa), dtype=np.float32)
+nc.close()
 
-date_fearly = dateshift(cyyyymmddhh, ileade-6)
-date_flate = dateshift(cyyyymmddhh, ileade)
-infile1 = '/Users/thamill/ccpa_v1/ccpa.'+date_fearly[0:8]+'/06/ccpa.t06z.06h.0p125.conus'
-infile2 = '/Users/thamill/ccpa_v1/ccpa.'+date_flate[0:8]+'/12/ccpa.t12z.06h.0p125.conus'
+# ---- read in the precipitation forecast probability at various
+#      stages of its production
 
-
-fexist1 = os.path.exists(infile1)
-if fexist1:
-    afile1 = pygrib.open(infile1)
-    grb2 = afile1.select()[0]
-    apcp_anal_t1 = grb2.values
-else:
-    print 'no analysis data for this date'
-    apcp_anal_t1 = -99.99*np.ones((nya,nxa),dtype=np.float32)
-
-fexist2 = os.path.exists(infile2)
-if fexist2:
-    afile2 = pygrib.open(infile2)
-    grb2 = afile2.select()[0]
-    lats_small_t, lons_small_t = grb2.latlons()
-    apcp_anal_t = apcp_anal_t1 + grb2.values
-    apcp_anal_t = np.where(apcp_anal_t > 500., mninetynine, apcp_anal_t)
-else:
-    print 'no analysis data for this date'
-    apcp_anal_t = -99.99*np.ones((nya,nxa),dtype=np.float32)
-#print 'min, max apcp_anal_t = ', np.min(apcp_anal_t), np.max(apcp_anal_t)
-
-afile2.close()
-
-data_directory = '/Users/thamill/precip/ecmwf_data/'
 infile = data_directory+cmodel+'_'+cleade+'h_IC'+cyyyymmddhh+'.nc'
 print infile
 nc = Dataset(infile)
@@ -117,10 +105,6 @@ rlatsa = nc.variables['rlatsa'][:,:]
 prob_forecast_raw = nc.variables['prob_forecast_raw'][:,:,:]
 prob_forecast_qmapped = nc.variables['prob_forecast_qmapped'][:,:,:]
 prob_forecast = nc.variables['prob_forecast'][:,:,:]
-
-
-print 'prob_forecast(0,nya/4,0:nxa:10) = ', prob_forecast[0,nya/4,0:nxa:10]
-
 
 climo_prob = nc.variables['climo_prob'][:,:,:]
 nc.close()
@@ -160,7 +144,7 @@ for ifield in range(4):
         position_legend = [0.02, 0.06, 0.46, 0.02]
         ctitle = '(c) Final quantile-mapped and dressed'
     elif ifield == 3:        
-        prob_forecast_display = apcp_anal_t # climo_prob[ithresh,:,:] #
+        prob_forecast_display = apcp_anal # climo_prob[ithresh,:,:] #
         position = [0.52, 0.09, 0.46, 0.33]
         position_legend = [0.52, 0.06, 0.46, 0.02]
         ctitle = '(d) CCPA precipitation analysis' # Climatological probability' #
@@ -176,6 +160,8 @@ for ifield in range(4):
     ax.set_title(ctitle,fontsize=11)
     m = Basemap(projection='mill',llcrnrlon=rlonsa[0,0],llcrnrlat=rlatsa[0,0],\
         urcrnrlon=rlonsa[-1,-1],urcrnrlat=rlatsa[-1,-1],resolution='l')
+    print 'ifield = ',ifield
+    print 'np.shape(apcp_anal) = ', np.shape(apcp_anal)
     x,y = m(rlonsa,rlatsa)
     prob_forecast_m = ma.array(prob_forecast_display)
     CS1 = m.contour(x,y,prob_forecast_m,clevs,colors=colorstblack,cmap=None,linewidths = linewidths)
