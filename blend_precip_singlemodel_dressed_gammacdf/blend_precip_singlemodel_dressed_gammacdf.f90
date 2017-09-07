@@ -106,7 +106,8 @@ LOGICAL exchangeable
 
 DATA cmonths /'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'/
 !DATA pthreshes /0.254, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0/
-DATA data_directory /'/Users/thamill/precip/ecmwf_data/'/
+!DATA data_directory /'/Users/thamill/precip/ecmwf_data/'/
+DATA data_directory /'/Projects/Reforecast2/netcdf/NationalBlend/'/
 
 ! --- Via command line, read in the input year/mo/day/hr and the forecast resolution 
 !     we're working with.  Process date to determine the day of the month as an integer
@@ -116,7 +117,7 @@ CALL getarg(2,cleade)       ! forecast lead time for beginning of precip accum p
 CALL getarg(3,cmodel)       ! for my test data ECMWF NCEP or CMC
 
 PRINT *,'****************************************************************************'
-PRINT *,'RUNNING blend_precip_singlemodel_dressed_x25.x',cyyyymmddhh,cleade,cmodel
+PRINT *,'RUNNING blend_precip_singlemodel_dressed_gammacdf.x ',cyyyymmddhh,cleade,cmodel
 PRINT *,'****************************************************************************'
 
 IF (TRIM(cmodel) .eq. 'ECMWF') THEN 
@@ -259,10 +260,6 @@ IF (pmax .gt. 0.) THEN
     ! ---- compute and apply the quantile mapping bias correction, 
     !      including the use of surrounding grid points
 
-    PRINT *,' in driving routine'
-    PRINT *,'fraction_zero_qmap_forecast(nxa/2,nya/2,:) = ',&
-        fraction_zero_qmap_forecast(nxa/2,nya/2,:)
-
     PRINT *,'calling control_quantile_mapping_x25_singlemodel'
     CALL control_quantile_mapping_singlemodel_gamma(nxa, nya, &
         nstride, nens, nens_qmap, n25, exchangeable, conusmask, &
@@ -288,7 +285,6 @@ IF (pmax .gt. 0.) THEN
     PRINT *, 'calling read_closest_histogram_singlemodel'
     CALL read_closest_histogram_singlemodel (nmembersx25, npcatvals, &
         infile_closest_histogram, closest_histogram, precip_histogram_thresholds)
-    PRINT *,'precip_histogram_thresholds = ', precip_histogram_thresholds
     
     infile_gamma_parameters = TRIM(data_directory)// &
         'gamma_fraction_zero_dressing_' // TRIM(cmodel) // &
