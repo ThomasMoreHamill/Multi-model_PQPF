@@ -90,7 +90,7 @@ for cmonth in cmonths:
         ones  = np.ones((nja,nia), dtype=np.float32)
         zeros = np.zeros((nja,nia), dtype=np.float32)       
         for idate in range(ndates):
-            if usethisdate[idate] == 1:
+            if usethisdate[idate] == 1 and idate < ndates-1:
                 apcp_anal = nc.variables['apcp_anal'][idate,:,:] + \
                     nc.variables['apcp_anal'][idate+1,:,:]
                 if apcp_anal[nja/2,nia/2] >= 0. :
