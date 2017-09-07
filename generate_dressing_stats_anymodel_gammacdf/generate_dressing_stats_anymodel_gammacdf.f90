@@ -30,9 +30,8 @@ REAL, PARAMETER, DIMENSION(nout_thresh) :: &
      output_threshes = (/0.254,1.0,2.5,5.0,10.0,25.0,50.0/) ! PQPFs generated for these amounts.
      
 CHARACTER*256, PARAMETER :: data_directory = '/Projects/Reforecast2/netcdf/NationalBlend/'
-! where I kept all the data; this is on ftp.cdc.noaa.gov
-!'/Users/thamill/precip/ecmwf_data/'
-
+! data_directory = '/Users/thamill/precip/ecmwf_data/'
+! where I kept all the data 
 
 INTEGER :: nstride ! number of grid pts between samples in 3x3 stencil
 
@@ -215,8 +214,11 @@ CALL read_precip_climatology_local(nxa, nya, &
 ! ---- read the precipitation analysis valid for this lead time.
 !      the input file was created by the python script ccpa_to_netcdf.py
 
-infile = TRIM(data_directory)//&
-    'precip_ccpav1_2002010200_to_2016123100.nc'
+!infile = TRIM(data_directory)//&
+!    'precip_ccpav1_2002010200_to_2016123100.nc'
+infile = TRIM(data_directory)//&    
+    'precip_analyses_ccpa_v1_2002010100_to_2016123100.nc'
+PRINT *,'reading precipitation analysis from ', TRIM(infile)
 CALL read_precipitation_analysis(nxa, nya, jyyyymmddhh,&
     infile, analysis, istat)
 PRINT *,'min, max of analyzed precip = ', &
