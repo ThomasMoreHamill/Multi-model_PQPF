@@ -1,9 +1,13 @@
 #!/bin/tcsh
 
-# ============================================================
+# 
 # point of contact: Tom Hamill, tom.hamill@noaa.gov, 
 # +1 (303) 497-3060.
 #
+# ===============================================================
+# GENERAL INFORMATION
+# ===============================================================
+
 # This documentation is for a (mostly) new way of achieving well-
 # calibrated, statistically postprocessed forecasts of 
 # probabilistic precipitation amount based on multi-model
@@ -87,8 +91,12 @@
 #
 # Questions?  Tom Hamill, tom.hamill@noaa.gov, (303) 497-3060
 #
+
 # ============================================================
-#
+# GENERATING SUPPLEMENTAL LOCATIONS AND PRECIPITATION CLIMATOLOGY
+# ONCE, BEFORE ANY OTHER DATA PROCESSING.
+# ============================================================
+
 # ---- Before any processing of the forecast data is performed,
 #      "supplemental locations" need to be pre-determined.   When 
 #      statistically postprocessing any particular (i,j) grid
@@ -118,6 +126,18 @@ create_supp_locns_ndfd2p5_monthly.x mm
 #      change the code to use precipitation climatologies based
 #      on fitted Gamma distributions.  Stay tuned
 #
+# ---- Another set of files that needs to be created ahead
+#      of time is a climatology of precipitation probabilities
+#      for various thresholds.   Code for this is in
+#      compute_climatology_ppn_multithresh folder.  Creation
+#      of this is performed via a python script
+
+python compute_climatology_ppn_multithresh.py
+
+# --------------------------------------------------------------
+# STEPS TO GENERATE TRAINING DATA AND STATISTICS NEEDED FOR
+# POSTPROCESSING
+# --------------------------------------------------------------
 #
 # ---- Note that I started this lastest PQPF development
 #      process by copying over an earlier version
@@ -149,7 +169,9 @@ create_supp_locns_ndfd2p5_monthly.x mm
 python gribfile_split.py infilename 
 
 #      where infilename is the input grib file name to
-#      split up.  Data was output in grib files.
+#      split up.  Data was output in grib files.  Regrettably,
+#      to save disk space, I saved neither the input or output
+#      grib files, only the netCDF files from the next step.
 
 # ---- The script below moves the data from grib files to 
 #      netCDF files at 1/8-degree spacing over the CONUS for 
@@ -169,7 +191,7 @@ python precip_forecast_ccpa_2netcdf.py ECMWF 24
 #      will estimate the forecast and analyzed distributions with
 #      three parameters, a fraction zero (the fraction of the time
 #      where the forecast or analyzed precipitation is zero) and then
-#      for positive amounts, a Gamma shape and scale parameter.  
+#      for positive amounts, a Gamma shape and scale parameter.   
 #      
 #      The high-level idea to save space is this: once analyzed data is 
 #      available, for a given case day, we will read in analyzed and  
@@ -216,7 +238,7 @@ python compute_singleday_gamma_stats.py 2016010100 ECMWF 24
 #      forecast and analyzed precipitation amounts for quantile
 #      mapping, and also to estimate the dressing distributions,
 #      i.e., the kernels of probability that are applied to every 
-#      quantile-mapped member.  We need to estimate these 
+#      quantile-mapped member.  At this point we need to estimate these 
 #      dressing distributions.   We generate these with 60 days
 #      of quantile-mapped forecasts.   To do a preliminary
 #      quantile mapping of the forecast and then generate
@@ -227,7 +249,7 @@ python compute_singleday_gamma_stats.py 2016010100 ECMWF 24
 
 generate_dressing_stats_anymodel_gammacdf.x  ECMWF 50 2016033100 24
 
-#      Data above is written to a netcdf file.  This file contains
+#      Data above is written to a netcdf file.  These files contains
 #      intermediate information like the closest-histogram statistics
 #      for a given day, and (see notes above) the intermediate
 #      information necessary to calculate the D statistics for dressing.
@@ -255,6 +277,10 @@ generate_dressing_stats_anymodel_gammacdf.x  ECMWF 50 2016033100 24
 
 python dressing_statistics_to_netcdf.py ECMWF 24
 
+# =================================================================
+# GENERATING THE POST-PROCESSED FORECAST FOR A SINGLE MODEL
+# =================================================================
+
 # ---- now we actually generate forecasts, quantile mapping
 #      a given member and then dressing it with Gamma-distributed
 #      noise. This is accomplished by running the program
@@ -273,7 +299,11 @@ blend_precip_singlemodel_dressed_gammacdf.x 2016040100 24 ECMWF
 #      for several thresholds, and saves out the forecast 
 #      probabilities to a netCDF file.
 
-
+# ==============================================================
+# GENERATING A MULTI-MODEL ENSEMBLE POST-PROCESSED FORECAST, AND
+# VERIFYING AND DISPLAYING FORECASTS.
+# ===============================================================
+#
 # ---- the final step in the forecast process would be
 #      the weighted linear combination of post-processed
 #      probabilistic forecasts.   An ad-hoc example of
@@ -293,7 +323,8 @@ python plot_reliability_mme.py 24 10.0
 
 #      where in this case 24 is the forecast lead in hours,
 #      and POP or 10.0 indicates the precipitation threshold
-#      of interest (POP in the US is 0.254 mm).
+#      of interest (POP in the US is 0.254 mm, 10.0 indicates
+#      10 mm).
 #
 # ---- Plotting scripts may be of interest.   To plot a 
 #      single model's forecast at various stages of
