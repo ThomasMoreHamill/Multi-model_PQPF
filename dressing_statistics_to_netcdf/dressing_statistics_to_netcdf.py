@@ -115,7 +115,8 @@ ndates = len(date_list)
 #      were previously generated in tally_gamma_statsfull_weighted.f90,
 #      called by generate_gammadressing_stats_anymodel.f90
 
-data_directory = '/Users/thamill/precip/ecmwf_data/'   
+#data_directory = '/Users/thamill/precip/ecmwf_data/'   
+data_directory = '/Projects/Reforecast2/netcdf/NationalBlend/'   
 infile = data_directory+'gamma_and_closest_hist_stats_' + \
     cmodel + '_' + date_begin + '_fhour'+cleade+'.nc'
 print infile
