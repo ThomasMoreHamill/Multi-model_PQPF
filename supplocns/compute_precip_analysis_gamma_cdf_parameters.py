@@ -83,11 +83,11 @@ for imonth in range(12):
                     ishift1 = 18
                     ishift2 = 24
                 iyyyymmddhh_first = int(dateshift(cyyyymmddhh,ishift1))
-                iyyyymmddhh_second = int(dateshift(cyyyymmddhh,ishift1))
+                iyyyymmddhh_second = int(dateshift(cyyyymmddhh,ishift2))
                 #print 'will load data for ', iyyyymmddhh_first, iyyyymmddhh_second
         
                 itemindex_first = np.where(yyyymmddhh_anal_end == iyyyymmddhh_first)
-                itemindex_second = np.where(yyyymmddhh_anal_end == iyyyymmddhh_first)
+                itemindex_second = np.where(yyyymmddhh_anal_end == iyyyymmddhh_second)
                 #print 'itemindex_first = ',itemindex_first
         
                 if itemindex_first[0] >= 0 and itemindex_second[0] >= 0:
