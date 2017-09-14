@@ -1,0 +1,19 @@
+
+#FFLAGS77 = -c
+#FFLAGS   = -check all
+#FFLAGSC   = -c
+#FC = /usr/bin/ifort
+#LIB = -L/usr/local/ifort/lib
+#INC = -I/usr/local/ifort/include
+
+FFLAGS77 = -c -C -O4 -fcheck=all
+FFLAGS   = -C -O4 -Wall -fbounds-check -fbacktrace
+FFLAGSC   = -c -C -O4
+
+FC = gfortran
+LIB = -L/opt/local/lib -L/usr/local/gfortran/lib 
+INC2 = -I/usr/local/gfortran/include
+INC = -I/opt/local/include
+
+all: 
+	$(FC) $(FFLAGS) $(INC) $(INC2) -o supplemental_locations_ndfd2p5.x supplemental_locations_ndfd2p5.f90 read_climatology_parameters_ndfd2p5.f90 read_terrain_heights_2p5.f90 check.f90 calculate_terrain_gradients.f90 $(LIB) -lnetcdf -lhdf5 -lhdf5_hl -lnetcdff
