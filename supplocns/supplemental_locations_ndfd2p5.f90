@@ -414,9 +414,7 @@ DO imonth = 1,12
                         miny = -99
                         diffmin = 999999.
                         
-                        !$OMP PARALLEL DO 
-                        !$OMP PARALLEL DEFAULT(PRIVATE) 
-                        !$OMP PARALLEL SHARED(difference)
+
                         DO ix2 = imin, imax   !1, nxa
                             DO jy2 = jmin, jmax  !1, nya
 
@@ -429,7 +427,6 @@ DO imonth = 1,12
                                 END IF
                             END DO ! jy2
                         END DO  ! ix2
-                        !$OMP END PARALLEL DO
                
                         ! ---- finally, define the supplemental 
 				        !      location on the forecast grid to be the 
