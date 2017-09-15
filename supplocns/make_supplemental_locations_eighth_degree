@@ -1,4 +1,9 @@
-
+SRCS = supplemental_locations_eighth_degree.f90 \
+       read_climatology_parameters.f90 \
+       read_terrain_heights.f90 \
+       check.f90 \
+       calculate_terrain_gradients.f90
+       
 #FFLAGS77 = -c
 #FFLAGS   = -check all
 #FFLAGSC   = -c
@@ -7,7 +12,7 @@
 #INC = -I/usr/local/ifort/include
 
 FFLAGS77 = -c -C -O4 -fcheck=all
-FFLAGS   = -C -O4 -Wall -fbounds-check -fbacktrace
+FFLAGS   = -C -O4 -Wall -fbounds-check -fbacktrace -fopenmp
 FFLAGSC   = -c -C -O4
 
 FC = gfortran
@@ -16,4 +21,4 @@ INC2 = -I/usr/local/gfortran/include
 INC = -I/opt/local/include
 
 all: 
-	$(FC) $(FFLAGS) $(INC) $(INC2) -o supplemental_locations_eighth_degree.x supplemental_locations_eighth_degree.f90 read_climatology_parameters.f90 read_terrain_heights.f90 check.f90 calculate_terrain_gradients.f90 $(LIB) -lnetcdf -lhdf5 -lhdf5_hl -lnetcdff
+	$(FC) $(FFLAGS) $(INC) $(INC2) -o supplemental_locations_eighth_degree.x $(SRCS) $(LIB) -lnetcdf -lhdf5 -lhdf5_hl -lnetcdff
