@@ -291,14 +291,22 @@ DO imonth = 1,12
             
         DO jya = 1, nya
 
-            maskout(:,:) = 0
-            difference_alpha(:,:) = 99999999. 
-            difference_beta(:,:) = 99999999.
-            difference_fz(:,:) = 99999999.
-            difference_terht(:,:) = 99999999.
-            difference_gradx(:,:) = 99999999.
-            difference_grady(:,:) = 99999999.
-            difference_dist(:,:) = 99999999.
+            ! ---- FROM ERIC...Initializing all of these (2145x1597) arrays at EVERY gridpoint
+	    !      iteration could definitely be hurting.  Adding OpenMP here.
+!$OMP PARALLEL DO DEFAULT(SHARED) COLLAPSE(2) PRIVATE(jj,ii)
+	    do jj=1,nya
+	       do ii=1,nxa
+                  maskout(ii,jj) = 0
+                  difference_alpha(ii,jj) = 99999999. 
+                  difference_beta(ii,jj) = 99999999.
+                  difference_fz(ii,jj) = 99999999.
+                  difference_terht(ii,jj) = 99999999.
+                  difference_gradx(ii,jj) = 99999999.
+                  difference_grady(ii,jj) = 99999999.
+                  difference_dist(ii,jj) = 99999999.
+	       end do ! ii=1,nxa
+	    end do ! jj=1,nya
+!$OMP END PARALLEL DO
 
             IF (conusmask(ixa,jya) .gt. 0) THEN ! grid point inside area with CCPA data
 
@@ -319,6 +327,8 @@ DO imonth = 1,12
                 gradx_coeff2 = gradx_coeff * SQRT(gradx_stddev(ixa,jya)) / gradxmax_sqrt
                 grady_coeff2 = grady_coeff * SQRT(grady_stddev(ixa,jya)) / gradymax_sqrt
 
+!$OMP PARALLEL DO DEFAULT(SHARED) COLLAPSE(2) PRIVATE(ix2,jy2,dist,fz_there,alpha_there,beta_there,gradx_there) &
+!$OMP PRIVATE(grady_there,ter_there,fz_diff,alpha_diff,beta_diff,gradx_diff,grady_diff,terr_diff) &
                 DO ix2 = imin, imax
                     DO jy2 = jmin, jmax
 
@@ -380,6 +390,7 @@ DO imonth = 1,12
                         ENDIF
                     END DO ! jy2
                 END DO ! ix2
+!$OMP END PARALLEL DO
 
                 DO isupp = 1, nsupplemental  ! number of supplemental locations
 
@@ -471,7 +482,7 @@ imin_m = MAX(1,minx-minseparation)
 imax_m = MIN(nx,minx+minseparation)
 jmin_m = MAX(1,miny-minseparation)
 jmax_m = MIN(ny,miny+minseparation)
-!$OMP END PARALLEL DO
+!$OMP PARALLEL DO DEFAULT(SHARED) COLLAPSE(2) PRIVATE(i,j,dist2,dist)
 DO i = imin_m, imax_m
    DO j = jmin_m, jmax_m
       dist2 = REAL((minx-i)**2 + (miny-j)**2)
