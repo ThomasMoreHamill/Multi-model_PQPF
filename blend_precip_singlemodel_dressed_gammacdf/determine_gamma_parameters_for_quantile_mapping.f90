@@ -72,7 +72,7 @@ CALL check(nf90_inquire_dimension(ncid,idimid,cvar,nya_large))
 cvar = "xsupp"
 CALL check(nf90_inq_dimid(ncid,cvar,idimid))
 CALL check(nf90_inquire_dimension(ncid,idimid,cvar,nsupp))
-print *,'after xsupp'
+!print *,'after xsupp'
     
 PRINT *,'nxa_large, nya_large, nsupp = ', nxa_large, nya_large, nsupp
 ALLOCATE(xlocations(nxa,nya,nsupp), xlocations_largedomain(nxa_large, nya_large, nsupp))    
@@ -127,7 +127,7 @@ DO jya = 1, nya
         ENDIF
     END DO
 END DO
-print *,'after shifting'
+!print *,'after shifting'
                 
 ! ---- now, for the input date and the forecast lead time, we are going to read
 !      in the prior 60 days of information necessary to build the gamma CDFs.
@@ -177,17 +177,18 @@ DO iday = ndayshift-60, ndayshift-1
 
 
     ishift_in_hours = iday*24
-    print *,'iday, ishift_in_hours,iyyyymmddhh = ', iday, ishift_in_hours,iyyyymmddhh
+    !print *,'iday, ishift_in_hours,iyyyymmddhh = ', iday, ishift_in_hours,iyyyymmddhh
     CALL updat(iyyyymmddhh,ishift_in_hours,jyyyymmddhh)
     WRITE (cyyyymmddhh,'(i10)') jyyyymmddhh
-    PRINT *,'jyyyymmddhh, cyyyymmddhh = ', jyyyymmddhh, cyyyymmddhh
+    !PRINT *,'jyyyymmddhh, cyyyymmddhh = ', jyyyymmddhh, cyyyymmddhh
     
     ! ---- build filename, read in this day's information
     
-    infile = TRIM(data_directory) // TRIM(cmodel) // &
+    infile = TRIM(data_directory) // TRIM(cmodel) // '/' // TRIM(cmodel) // &
         '_D_statistics_data_IC' //cyyyymmddhh // '_' // TRIM(cleade) // 'h.nc'
-    print *,'reading from ', infile
+    print *,'reading ', TRIM(infile)
     INQUIRE (file = infile, exist=exist)
+    !PRINT *,'exist = ',exist
     IF (exist) THEN
 
         CALL check(nf90_open(TRIM(infile),NF90_NOWRITE,ncid))
@@ -232,14 +233,14 @@ DO iday = ndayshift-60, ndayshift-1
     
         CALL check(nf90_close(ncid))
     
-        PRINT *,'npositive_analysis(1:nxa:5, nya/2) = ', &
-            npositive_analysis(1:nxa:5, nya/2)
-        PRINT *,'nzeros_analysis(1:nxa:5, nya/2) = ', &
-            nzeros_analysis(1:nxa:5, nya/2)
-        PRINT *,'sumx_analysis(1:nxa:5, nya/2) = ', &
-            sumx_analysis(1:nxa:5, nya/2)        
-        PRINT *,'sumlnx_analysis(1:nxa:5, nya/2) = ', &
-            sumlnx_analysis(1:nxa:5, nya/2)  
+        !PRINT *,'npositive_analysis(1:nxa:5, nya/2) = ', &
+        !    npositive_analysis(1:nxa:5, nya/2)
+        !PRINT *,'nzeros_analysis(1:nxa:5, nya/2) = ', &
+        !    nzeros_analysis(1:nxa:5, nya/2)
+        !PRINT *,'sumx_analysis(1:nxa:5, nya/2) = ', &
+        !    sumx_analysis(1:nxa:5, nya/2)        
+        !PRINT *,'sumlnx_analysis(1:nxa:5, nya/2) = ', &
+        !    sumlnx_analysis(1:nxa:5, nya/2)  
     
         sumx_analysis_multiday = sumx_analysis_multiday + sumx_analysis
         sumlnx_analysis_multiday = sumlnx_analysis_multiday + sumlnx_analysis
@@ -250,6 +251,8 @@ DO iday = ndayshift-60, ndayshift-1
         sumlnx_forecast_multiday = sumlnx_forecast_multiday + sumlnx_forecast
         npositive_forecast_multiday = npositive_forecast_multiday + INT(npositive_forecast)
         nzeros_forecast_multiday = nzeros_forecast_multiday + INT(nzeros_forecast)
+    ELSE
+        PRINT *,'This file does not exist.'
     END IF 
 END DO
 
@@ -302,15 +305,15 @@ DO jya = 1, nya
     END DO
 END DO   
 
-PRINT *,'sumx_analysis(:,nya/2) = ',sumx_analysis(:,nya/2)
-PRINT *,'sumlnx_analysis(:,nya/2) = ',sumlnx_analysis(:,nya/2)
-PRINT *,'npositive_analysis_final(:,nya/2) = ', npositive_analysis_final(:,nya/2)
-PRINT *,'nzeros_analysis_final(:,nya/2) = ', nzeros_analysis_final(:,nya/2)
+!PRINT *,'sumx_analysis(:,nya/2) = ',sumx_analysis(:,nya/2)
+!PRINT *,'sumlnx_analysis(:,nya/2) = ',sumlnx_analysis(:,nya/2)
+!PRINT *,'npositive_analysis_final(:,nya/2) = ', npositive_analysis_final(:,nya/2)
+!PRINT *,'nzeros_analysis_final(:,nya/2) = ', nzeros_analysis_final(:,nya/2)
 
-PRINT *,'sumx_forecast(:,nya/2,1) = ',sumx_forecast(:,nya/2,1)
-PRINT *,'sumlnx_forecast(:,nya/2,1) = ',sumlnx_forecast(:,nya/2,1)
-PRINT *,'npositive_forecast_final(:,nya/2,1) = ', npositive_forecast_final(:,nya/2,1)
-PRINT *,'nzeros_forecast_final(:,nya/2,1) = ', nzeros_forecast_final(:,nya/2,1)
+!PRINT *,'sumx_forecast(:,nya/2,1) = ',sumx_forecast(:,nya/2,1)
+!PRINT *,'sumlnx_forecast(:,nya/2,1) = ',sumlnx_forecast(:,nya/2,1)
+!PRINT *,'npositive_forecast_final(:,nya/2,1) = ', npositive_forecast_final(:,nya/2,1)
+!PRINT *,'nzeros_forecast_final(:,nya/2,1) = ', nzeros_forecast_final(:,nya/2,1)
     
 ! ---- calculate D statistic and from that Gamma distribution parameters and fraction zero.
 
@@ -367,6 +370,7 @@ END DO
 !PRINT *,' in subroutine determine_gamma_parameters_for_quantile_mapping'
 !PRINT *,'fraction_zero_qmap_forecast(nxa/2,nya/2,:) = ',&
 !    fraction_zero_qmap_forecast(nxa/2,nya/2,:)
+    
 
 ! ---- deallocate
 

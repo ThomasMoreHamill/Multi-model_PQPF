@@ -1,15 +1,11 @@
 PROGRAM blend_precip_singlemodel_dressed_gammacdf
 
-    ! ---- this version estimates forecast and analyzed CDFs with either empirical or
-    !      Gamma distributions estimated from previous 60 forecast days.
+    ! ---- this version estimates forecast and analyzed CDFs with Gamma distributions
+    !      estimated from previous 60 forecast days.
 
 
 USE netcdf
 
-LOGICAL, PARAMETER :: empirical = .false. ! if = 1 use empirical CDFs for quantile otherwise fitted Gamma
-LOGICAL, PARAMETER :: gammadress = .false. ! full fitted Gamma dressing or simple Gaussian
-    ! centered on each ensemble member
-LOGICAL, PARAMETER :: csgd = .true. ! whether or not to perform a variant of Scheuerer's CSGD
 INTEGER, PARAMETER :: nxa = 464  ! number of grid pts in x-dir for 1/8-deg analysis grid
 INTEGER, PARAMETER :: nya = 224  ! number of grid pts in y-dir for 1/8-deg analysis grid 
 INTEGER, PARAMETER :: nens_ecmwf = 50 ! number of ECMWF perturbed ensemble members
@@ -27,7 +23,6 @@ INTEGER, PARAMETER :: nlo_int_hi_vals = 3 ! dimension for lowest, intermediate, 
 INTEGER, PARAMETER :: npcatvals = 3 ! closest_histogram stats are stratified by ens-mean amount.
 INTEGER, PARAMETER :: n25 = 25
     ! closest_histogram array.
-INTEGER, PARAMETER :: ncsgd_params = 6
 
 REAL, PARAMETER, DIMENSION(nthreshes) :: pthreshes = &
     (/0.254, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0/) ! precipitation threshold amounts where we compute PQPF
@@ -50,7 +45,6 @@ REAL, DIMENSION(nclim_p1_vals) :: fraction_zeros_fclimpop ! when ens mean = 0.,
     ! fraction of samples with zero dressed values
 REAL, DIMENSION(nclim_vals) :: climo_pop_thresholds ! climatological probability thresholds 
     ! between elements of gamma_shape_fclimpop, etc.
-REAL*8, DIMENSION(ncsgd_params) :: csgd_parameters
 
 CHARACTER*2 chh, cmm
 CHARACTER*3, DIMENSION(12) :: cmonths ! Jan, Feb, etc.
@@ -60,10 +54,7 @@ CHARACTER*256 infile_early ! ecmwf forecast data for today
 CHARACTER*256 infile_late ! ecmwf forecast data for today
 CHARACTER*256 infile_closest_histogram ! netCDF file name with closest_histogram array
 CHARACTER*256 infile_gamma_parameters ! netCDF file containing Gamma dressing distribution params.
-CHARACTER*256 infile_CSGD_climatology ! netCDF file containing CSGD analyzed climatology parameters
-CHARACTER*256 infile_CSGD_regress_params ! CSGD regression parameters
 CHARACTER*256 outfile ! name of flat fortran file with output prob forecasts
-CHARACTER*256 outfile_HXLR ! name of flat fortran file with output prob HXLR forecasts
 CHARACTER*10 cyyyymmddhh ! year,month,day,hour of initial time of forecast
 CHARACTER*3 cleade ! ending hour of precip forecast accumulation, 3 digits, e.g., '024'
 CHARACTER*3 cleadb ! beginning hour of precip forecast accumulation, 3 digits, e.g., '012'
@@ -71,7 +62,6 @@ CHARACTER*5 cmodel ! 'ECMWF', 'NCEP', 'CMC' currently
 
 INTEGER*2, DIMENSION(nxa,nya) :: conusmask  ! inherited from CCPA data set
 REAL, DIMENSION(npcatvals) :: precip_histogram_thresholds
-REAL b0_mean, b1_mean, b0_spread, b1_spread ! heteroscedastic extended logistic regression coefficients
 
 ! ---- 1/8 deg. Lat/Lon arrays (i.e. CCPA grid)
 
@@ -86,32 +76,19 @@ REAL, ALLOCATABLE, DIMENSION(:,:,:,:) :: ensemble_ccpa_x25 ! ecmwf ens precip fo
 
 REAL, ALLOCATABLE, DIMENSION(:,:) :: closest_histogram ! contains histogram of closest member to analyzed
 REAL, ALLOCATABLE, DIMENSION(:,:,:) :: climo_prob ! climatological event probability
-REAL, ALLOCATABLE, DIMENSION(:,:) :: CSGD_climo_mean
-REAL, ALLOCATABLE, DIMENSION(:,:) :: CSGD_climo_mu
-REAL, ALLOCATABLE, DIMENSION(:,:) :: CSGD_climo_sigma
-REAL, ALLOCATABLE, DIMENSION(:,:) :: CSGD_climo_shift
 REAL, ALLOCATABLE, DIMENSION(:,:) :: rlonsa ! precip analysis grid lat/lons
 REAL, ALLOCATABLE, DIMENSION(:,:) :: rlatsa ! precip analysis grid lat/lons
 REAL, ALLOCATABLE, DIMENSION(:,:) :: ensemble_mean ! precip analysis grid lat/lons
 REAL, ALLOCATABLE, DIMENSION(:,:,:) :: prob_forecast  ! final probability forecast
 REAL, ALLOCATABLE, DIMENSION(:,:,:) :: prob_forecast_raw  ! output raw ensemble probability forecast
 REAL, ALLOCATABLE, DIMENSION(:,:,:) :: prob_forecast_qmapped ! output quantile-mapped ensemble prob forecast
-REAL, ALLOCATABLE, DIMENSION(:,:,:) :: prob_forecast_CSGD ! output quantile-mapped ensemble prob forecast
 REAL, ALLOCATABLE, DIMENSION(:,:,:) :: gamma_shape_qmap_forecast
 REAL, ALLOCATABLE, DIMENSION(:,:,:) :: gamma_scale_qmap_forecast
 REAL, ALLOCATABLE, DIMENSION(:,:,:) :: fraction_zero_qmap_forecast
 REAL, ALLOCATABLE, DIMENSION(:,:) :: gamma_shape_qmap_analysis
 REAL, ALLOCATABLE, DIMENSION(:,:) :: gamma_scale_qmap_analysis
 REAL, ALLOCATABLE, DIMENSION(:,:) :: fraction_zero_qmap_analysis
-REAL, ALLOCATABLE, DIMENSION(:,:,:) :: precip_anal_cdf
-REAL, ALLOCATABLE, DIMENSION(:,:,:,:) :: ensemble_cdf
-REAL, ALLOCATABLE, DIMENSION(:,:) :: rho
-!REAL, ALLOCATABLE, DIMENSION(:,:) :: shift
 
-
-REAL, ALLOCATABLE, DIMENSION(:,:) :: ensmean ! for HXLR, quantile-mapped 25x larger ens mean
-REAL, ALLOCATABLE, DIMENSION(:,:) :: stddev ! for HXLR, quantile-mapped 25x larger ens spread
-REAL, ALLOCATABLE, DIMENSION(:,:) :: POP ! probability of precipitaton (> 0.254 mm)
 
 integer :: ierr      ! return variable for BAOPEN
 integer :: ios       ! return variable for Fortran I/O, Allocation statements
@@ -204,7 +181,6 @@ ALLOCATE (rlonsa(nxa,nya),rlatsa(nxa,nya))
 ALLOCATE (prob_forecast(nxa,nya,nthreshes))
 ALLOCATE (prob_forecast_raw(nxa,nya,nthreshes))
 ALLOCATE (prob_forecast_qmapped(nxa,nya,nthreshes))
-
 ALLOCATE (climo_prob(nxa,nya,nthreshes))
 ALLOCATE (ensemble_ccpa_x25(n25,nxa,nya,nens))
 ALLOCATE (gamma_shape_qmap_forecast(nxa,nya,nens_qmap))
@@ -213,17 +189,6 @@ ALLOCATE (fraction_zero_qmap_forecast(nxa,nya,nens_qmap))
 ALLOCATE (gamma_shape_qmap_analysis(nxa,nya))
 ALLOCATE (gamma_scale_qmap_analysis(nxa,nya))
 ALLOCATE (fraction_zero_qmap_analysis(nxa,nya))
-ALLOCATE (ensmean(nxa,nya))
-ALLOCATE (stddev(nxa,nya))
-ALLOCATE (POP(nxa,nya))
-IF (csgd) ALLOCATE (prob_forecast_CSGD(nxa,nya,nthreshes))
-IF (csgd) ALLOCATE (CSGD_climo_mean(nxa,nya))
-IF (csgd) ALLOCATE (CSGD_climo_mu(nxa,nya))
-IF (csgd) ALLOCATE (CSGD_climo_sigma(nxa,nya))
-IF (csgd) ALLOCATE (CSGD_climo_shift(nxa,nya))
-!IF (csgd) ALLOCATE (shift(nxa,nya))
-IF (csgd) ALLOCATE (rho(nxa,nya))
-
 
 prob_forecast(:,:,:) = -99.99
 prob_forecast_raw(:,:,:) = -99.99
@@ -247,41 +212,27 @@ CALL read_precip_climatology_multi_thresh(nxa, nya, nthreshes, pthreshes, &
 !      These files contains the 1/8 deg. grid data.
 
 ensemble_ccpa = -99.99
-IF (TRIM(cmodel) .eq. 'CMC' .or. TRIM(cmodel) .eq. 'NCEP' .or. &
-TRIM(cmodel) .eq. 'ECMWF')  THEN
-    infile_late = TRIM(data_directory) // TRIM(cmodel) // '_' // cyyyymmddhh // &
+IF (cmodel .eq. 'CMC') THEN    
+    infile_late = TRIM(data_directory) // 'CMC_' // cyyyymmddhh // &
         '_leadtime' // TRIM(ADJUSTL(cleade)) // 'h.nc'
-    infile_early = TRIM(data_directory) // TRIM(cmodel) // '_' // cyyyymmddhh // &
+    infile_early = TRIM(data_directory) // 'CMC_' // cyyyymmddhh // &
         '_leadtime' // TRIM(ADJUSTL(cleadb)) // 'h.nc'
-    CALL read_forecasts_local (nxa, nya, nens, infile_early, infile_late, &
-        ensemble_ccpa)
+ELSE IF (cmodel .eq. 'NCEP') THEN   
+    infile_late = TRIM(data_directory) // 'NCEP_' // cyyyymmddhh // &
+        '_leadtime' // TRIM(ADJUSTL(cleade)) // 'h.nc'   
+    infile_early = TRIM(data_directory) // 'NCEP_' // cyyyymmddhh // &
+        '_leadtime' // TRIM(ADJUSTL(cleadb)) // 'h.nc'   
+ELSE IF (cmodel .eq. 'ECMWF') THEN   
+    infile_late = TRIM(data_directory) // 'ECMWF_' // cyyyymmddhh // &
+        '_leadtime' // TRIM(ADJUSTL(cleade)) // 'h.nc'   
+    infile_early = TRIM(data_directory) // 'ECMWF_' // cyyyymmddhh // &
+        '_leadtime' // TRIM(ADJUSTL(cleadb)) // 'h.nc'   
 ELSE
-    PRINT *,'invalid model choice: ', TRIM(cmodel)
-    PRINT *,'stopping.'
+    PRINT *,'your choice of model = ', TRIM(cmodel), ' is not supported.  Stopping.'    
     STOP
 ENDIF
-
-! ---- If CSGD forecasts desired (empirical .eq.)
-
-IF (csgd) THEN
-    IF (iendhour .eq. 0) THEN 
-        infile_CSGD_climatology = &
-            '/Users/mscheuerer/Desktop/Tom-NBM/CSGD_climatology_CCPA_0p125deg_00Z.nc'
-    ELSE
-        infile_CSGD_climatology = &
-            '/Users/mscheuerer/Desktop/Tom-NBM/CSGD_climatology_CCPA_0p125deg_00Z.nc'
-    ENDIF
-    CALL read_CSGD_climatology_parameters(infile_CSGD_climatology, nxa, nya, &
-        jyear, jmo, jday, CSGD_climo_mean, CSGD_climo_mu, CSGD_climo_sigma, &
-        CSGD_climo_shift)
-
-    infile_CSGD_regress_params = '/Users/mscheuerer/Desktop/Tom-NBM/' // &
-        TRIM(cmodel) // '/' // TRIM(cmodel) // '_parameters_leade' // &
-        TRIM(ADJUSTL(cleade)) //'h_' // '2016050100.nc' !cyyyymmddhh // '.nc' 
-
-    CALL read_CSGD_regression_parameters(nxa, nya, infile_CSGD_regress_params, &
-        ncsgd_params, csgd_parameters, rho)
-ENDIF 
+CALL read_forecasts_local (nxa, nya, nens, infile_early, infile_late, &
+    ensemble_ccpa)
 
 ! ---- only bother processing if there is valid positive data
     
@@ -294,59 +245,29 @@ IF (pmax .gt. 0.) THEN
     PRINT *, 'Calling raw_ensemble_probs_singlemodel'
     PRINT *, 'pthreshes = ', pthreshes
     CALL raw_ensemble_probs_singlemodel(nxa, nya, nens, nthreshes, pthreshes, &
-        ensemble_ccpa, prob_forecast_raw, ensemble_mean)  
-    PRINT *,'max(ensemble_ccpa) = ', maxval(ensemble_ccpa)
-    PRINT *,'max(ensemble_mean) = ', maxval(ensemble_mean)  
+        ensemble_ccpa, prob_forecast_raw, ensemble_mean)    
     
-    ! ---- This version of the program offers the user the option of using 
-    !      empirically generated CDFs in the quantile-mapping process, or gamma-
-    !      distributed CDFs
+    ! ---- read in the gamma parameters for each forecast and for the analyzed precip.
+    !      we note that the CMC ensemble has biases which may differ for each
+    !      member, so the array dimensioning is different for this system.
+
+    PRINT *,'calling determine_gamma_parameters_for_quantile_mapping'
+    CALL determine_gamma_parameters_for_quantile_mapping(nxa, nya, &
+        iyyyymmddhh, imonth, nens_qmap, data_directory, cmodel, cleade, &
+        cmonths, conusmask, gamma_shape_qmap_forecast, gamma_scale_qmap_forecast, &
+        fraction_zero_qmap_forecast, gamma_shape_qmap_analysis, &
+        gamma_scale_qmap_analysis, fraction_zero_qmap_analysis)
     
-    IF (empirical) THEN
-        
-        ! --- read in forecast and analyzed CDFs at pre-defined precipitation amounts.
-        
-        ALLOCATE(precip_anal_cdf(nxa,nya,npct))
-        ALLOCATE(ensemble_cdf(nxa,nya,nens_qmap,npct))
-        
-        PRINT *,'calling read_cdf_netcdf_anal_forecast'
-        CALL read_cdf_netcdf_anal_forecast(nxa, nya, npct, nens_qmap, iyyyymmddhh, &
-            cleade, cmodel, data_directory, precip_anal_cdf, ensemble_cdf, thresh)
-            
-        CALL control_ensemble_quantile_mapping_x25(nxa, nya, npct, nstride, &
-            nens, nens_qmap, n25, thresh, conusmask, precip_anal_cdf, &
-            ensemble_cdf, ensemble_ccpa, ensemble_ccpa_x25, &
-            ensmean, stddev, POP)
-            
-        DEALLOCATE(precip_anal_cdf, ensemble_cdf)
-        
-    ELSE
-    
-        ! ---- read in the gamma parameters for each forecast and for the analyzed precip.
-        !      we note that the CMC ensemble has biases which may differ for each
-        !      member, so the array dimensioning is different for this system.
+    ! ---- compute and apply the quantile mapping bias correction, 
+    !      including the use of surrounding grid points
 
-        PRINT *,'calling determine_gamma_parameters_for_quantile_mapping'
-        CALL determine_gamma_parameters_for_quantile_mapping(nxa, nya, &
-            iyyyymmddhh, imonth, nens_qmap, data_directory, cmodel, cleade, &
-            cmonths, conusmask, gamma_shape_qmap_forecast, gamma_scale_qmap_forecast, &
-            fraction_zero_qmap_forecast, gamma_shape_qmap_analysis, &
-            gamma_scale_qmap_analysis, fraction_zero_qmap_analysis)
-
-        ! ---- compute and apply the quantile mapping bias correction, 
-        !      including the use of surrounding grid points
-
-        PRINT *,'calling control_quantile_mapping_x25_singlemodel'
-        CALL control_quantile_mapping_singlemodel_gamma(nxa, nya, &
-            nstride, nens, nens_qmap, n25, exchangeable, conusmask, &
-            ensemble_ccpa, gamma_shape_qmap_forecast, &
-            gamma_scale_qmap_forecast, fraction_zero_qmap_forecast, &
-            gamma_shape_qmap_analysis, gamma_scale_qmap_analysis, &
-            fraction_zero_qmap_analysis, ensemble_ccpa_x25, &
-            ensmean, stddev, POP)
-            
-    ENDIF
-    PRINT *, 'maxval(ensemble_ccpa_x25) = ', maxval(ensemble_ccpa_x25)
+    PRINT *,'calling control_quantile_mapping_x25_singlemodel'
+    CALL control_quantile_mapping_singlemodel_gamma(nxa, nya, &
+        nstride, nens, nens_qmap, n25, exchangeable, conusmask, &
+        ensemble_ccpa, gamma_shape_qmap_forecast, &
+        gamma_scale_qmap_forecast, fraction_zero_qmap_forecast, &
+        gamma_shape_qmap_analysis, gamma_scale_qmap_analysis, &
+        fraction_zero_qmap_analysis, ensemble_ccpa_x25)
     
     ! ---- Get probabilities from quantile-mapped ensemble before dressing.
 
@@ -360,135 +281,63 @@ IF (pmax .gt. 0.) THEN
     !      deficiency errors.
 
     ALLOCATE(closest_histogram(nmembersx25,npcatvals))
-    IF (empirical) THEN
-        infile_closest_histogram = TRIM(data_directory) // TRIM(cmodel) // &
-            '/closest_histogram_' // TRIM(cmodel) // '_date=' // &
-            cyyyymmddhh // '_lead=' // TRIM(cleade) // '.nc'   
-    ELSE
-        infile_closest_histogram = TRIM(data_directory) // TRIM(cmodel) // &
-            '/closest_histogram_' // TRIM(cmodel) // '_date=' // &
-            cyyyymmddhh // '_lead=' // TRIM(cleade) // '_gammaqmap.nc'    
-    ENDIF 
+    infile_closest_histogram = TRIM(data_directory) // TRIM(cmodel) // &
+        '/closest_histogram_' // TRIM(cmodel) // '_date=' // &
+        cyyyymmddhh // '_lead=' // TRIM(cleade) // '.nc'   
     PRINT *, 'calling read_closest_histogram_singlemodel'
     CALL read_closest_histogram_singlemodel (nmembersx25, npcatvals, &
         infile_closest_histogram, closest_histogram, &
         precip_histogram_thresholds)
-    
+   
+    infile_gamma_parameters = TRIM(data_directory) // TRIM(cmodel) // &
+        '/gamma_fraction_zero_dressing_' // TRIM(cmodel) // '_date=' // &
+        cyyyymmddhh // '_lead=' // TRIM(cleade) //'.nc'
+    PRINT *, 'calling read_dressing_parameters_singlemodel'
+    CALL read_dressing_parameters_singlemodel(npvals, npcatvals, &
+        nlo_int_hi_vals, nclim_p1_vals, nclim_vals, &
+        infile_gamma_parameters, precip_values, gamma_shapes, &
+        gamma_scales, fraction_zeros, gamma_shape_fclimpop, &
+        gamma_scale_fclimpop, fraction_zeros_fclimpop, &
+        climo_pop_thresholds)  
 
     ! ---- Generate a final probability from the exceedance probability
     !      from a weighted sum of kernels appropriate for each sorted, 
     !      quantile-mapped member
 
-    IF (gammadress) THEN
+    PRINT *,'calling ensemble_probs_dressweight_x25'
+    CALL ensemble_probs_dressweight_x25 (n25, nxa, nya, nens, &
+        nmembersx25, npcatvals, npvals, nlo_int_hi_vals, &
+        nclim_p1_vals, nclim_vals, nthreshes, pthreshes, precip_values, &
+        ensemble_ccpa_x25, closest_histogram, precip_histogram_thresholds, &
+        gamma_shapes, gamma_scales, fraction_zeros, gamma_shape_fclimpop, &
+        gamma_scale_fclimpop, fraction_zeros_fclimpop, climo_pop_thresholds, &
+        conusmask, climo_prob, prob_forecast_qmapped, prob_forecast)
 
-        IF (empirical) THEN
-            infile_gamma_parameters = TRIM(data_directory) // TRIM(cmodel) // &
-                '/gamma_fraction_zero_dressing_' // TRIM(cmodel) // '_date=' // &
-                cyyyymmddhh // '_lead=' // TRIM(cleade) //'.nc'
-        ELSE
-            infile_gamma_parameters = TRIM(data_directory) // TRIM(cmodel) // &
-                '/gamma_fraction_zero_dressing_' // TRIM(cmodel) // '_date=' // &
-                cyyyymmddhh // '_lead=' // TRIM(cleade) //'_gammaqmap.nc'
-        ENDIF    
-        PRINT *, 'calling read_dressing_parameters_singlemodel'
-        CALL read_dressing_parameters_singlemodel(npvals, npcatvals, &
-            nlo_int_hi_vals, nclim_p1_vals, nclim_vals, &
-            infile_gamma_parameters, precip_values, gamma_shapes, &
-            gamma_scales, fraction_zeros, gamma_shape_fclimpop, &
-            gamma_scale_fclimpop, fraction_zeros_fclimpop, &
-            climo_pop_thresholds)  
-
-        PRINT *,'calling ensemble_probs_dressweight_x25'
-        CALL ensemble_probs_dressweight_x25 (n25, nxa, nya, nens, &
-            nmembersx25, npcatvals, npvals, nlo_int_hi_vals, &
-            nclim_p1_vals, nclim_vals, nthreshes, pthreshes, precip_values, &
-            ensemble_ccpa_x25, closest_histogram, precip_histogram_thresholds, &
-            gamma_shapes, gamma_scales, fraction_zeros, gamma_shape_fclimpop, &
-            gamma_scale_fclimpop, fraction_zeros_fclimpop, climo_pop_thresholds, &
-            conusmask, climo_prob, prob_forecast_qmapped, prob_forecast)
-    ELSE
-        CALL ensemble_probs_dressweight_x25_normal (n25, nxa, nya, nens, &
-            nmembersx25, npcatvals, nthreshes, pthreshes, &
-            ensemble_ccpa_x25, closest_histogram, precip_histogram_thresholds, &
-            conusmask, climo_prob, prob_forecast_qmapped, prob_forecast)
-    ENDIF    
     DEALLOCATE(closest_histogram)
 
-    write(6,fmt='(A)')' Dressed Model Precipitation Amount Stats (1/8 deg. grid):'
+    write(6,fmt='(A)')' Model Precipitation Amount Stats (1/8 deg. grid):'
     write(6,fmt='(4(A10,1X))')'MIN','MAX','MEAN'
     write(6,fmt='(A10,1X,3(F10.5,1X))') minval(ensemble_ccpa),&
         maxval(ensemble_ccpa),sum(ensemble_ccpa)/(nxa*nya*nens)
-        
-        
-    IF (csgd) THEN
-        CALL ensemble_probs_csgd (nxa, nya, nthreshes, ncsgd_params, &
-            pthreshes, conusmask, ensmean, stddev, POP, CSGD_climo_mean, &
-            CSGD_climo_mu, CSGD_climo_sigma, CSGD_climo_shift, &
-            csgd_parameters, rho, prob_forecast_CSGD)
-    ENDIF
-         
 ELSE
     ensemble_mean(:,:) = -99.99
 ENDIF
 
 PRINT *,'max prob_forecast = ', maxval(prob_forecast)
     
-    
-! ---- write the output to file(s)
-
-IF (.not. empirical) THEN
-    IF (gammadress) THEN
-        outfile = TRIM(data_directory) // TRIM(cmodel) // '/' // &
-            TRIM(cmodel) // '_' // TRIM(cleade) // 'h_IC' // &
-            cyyyymmddhh // '_gammaqmap_gammadress.nc'  
-    ELSE
-        outfile = TRIM(data_directory) // TRIM(cmodel) // '/' // &
-            TRIM(cmodel) // '_' // TRIM(cleade) // 'h_IC' // &
-            cyyyymmddhh // '_gammaqmap_gaussdress.nc'
-    ENDIF  
-ELSE IF (empirical) THEN
-    IF (gammadress) THEN
-        outfile = TRIM(data_directory) // TRIM(cmodel) // '/' // &
-            TRIM(cmodel) // '_' // TRIM(cleade) // 'h_IC' // &
-            cyyyymmddhh // '_empirical_gammadress.nc'
-    ELSE
-        outfile = TRIM(data_directory) // TRIM(cmodel) // '/' // &
-            TRIM(cmodel) // '_' // TRIM(cleade) // 'h_IC' // &
-            cyyyymmddhh // '_empirical_gaussdress.nc' 
-    ENDIF           
-ENDIF
+outfile = TRIM(data_directory) // TRIM(cmodel) // '/' // &
+    TRIM(cmodel) // '_' // TRIM(cleade) // 'h_IC' // &
+    cyyyymmddhh // '.nc'
 CALL write_output_to_netcdf(outfile, nxa, nya, nens, nthreshes, &
     pthreshes, rlonsa, rlatsa, climo_prob, conusmask, prob_forecast_raw, &
-    prob_forecast_qmapped, prob_forecast, ensemble_mean)        
-
-IF (csgd) THEN   
-    IF (.not. empirical) THEN          
-        outfile = TRIM(data_directory) // TRIM(cmodel) // '/' // &
-            TRIM(cmodel) // '_' // TRIM(cleade) // 'h_IC' // &
-            cyyyymmddhh // '_gammaqmap_csgd.nc'
-    ELSE
-        outfile = TRIM(data_directory) // TRIM(cmodel) // '/' // &
-            TRIM(cmodel) // '_' // TRIM(cleade) // 'h_IC' // &
-            cyyyymmddhh // '_empirical_csgd.nc'
-    ENDIF        
-    CALL write_output_to_netcdf(outfile, nxa, nya, nens, nthreshes, &
-        pthreshes, rlonsa, rlatsa, climo_prob, conusmask, prob_forecast_raw, &
-        prob_forecast_qmapped, prob_forecast_csgd, ensemble_mean)        
-ENDIF       
+    prob_forecast_qmapped, prob_forecast, ensemble_mean)
 
 DEALLOCATE(rlonsa, rlatsa, prob_forecast, prob_forecast_raw, &
     prob_forecast_qmapped, climo_prob, ensemble_ccpa, &
     ensemble_ccpa_x25, ensemble_mean, gamma_shape_qmap_forecast, &
     gamma_scale_qmap_forecast, fraction_zero_qmap_forecast, &
     gamma_shape_qmap_analysis, gamma_scale_qmap_analysis, &
-    fraction_zero_qmap_analysis, ensmean, stddev, POP, stat=ios)
-
-IF (csgd) DEALLOCATE (prob_forecast_CSGD)
-IF (csgd) DEALLOCATE (CSGD_climo_mean)
-IF (csgd) DEALLOCATE (CSGD_climo_mu)
-IF (csgd) DEALLOCATE (CSGD_climo_sigma)
-IF (csgd) DEALLOCATE (CSGD_climo_shift)
-IF (csgd) DEALLOCATE (rho)
+    fraction_zero_qmap_analysis, stat=ios)
 
 write(6,*)'Deallocation Status = ',ios
 write(6,*)'Done!'

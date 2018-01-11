@@ -19,14 +19,14 @@ IF (emax .le. 0.0) THEN
     PRINT *,'bad data for this day.  Setting all outpust to missing.'
     prob_forecast(:,:,:) = -99.99
 ELSE
-    DO jya = 1, nya
-        DO ixa = 1, nxa
-            ensemble(:) = ensemble_ccpa(ixa,jya,:)
-            sume = 0.0
-            DO ithresh = 1, nthreshes  
+    DO ithresh = 1, nthreshes 
+        rthresh = pthreshes(ithresh)
+        DO jya = 1, nya
+            DO ixa = 1, nxa
+                ensemble(:) = ensemble_ccpa(ixa,jya,:)
+                sume = 0.0
                 ncount = 0
                 ndenom = 0
-                rthresh = pthreshes(ithresh)
                 DO imem = 1, nens
                     IF (ensemble_ccpa(ixa,jya,imem) .ge. rthresh) ncount = ncount + 1
                     IF (ensemble_ccpa(ixa,jya,imem) .ge. -98.) ndenom = ndenom + 1
@@ -45,9 +45,16 @@ ELSE
                 !    PRINT *,'ithresh rthresh, prob = ', &
                 !        ithresh, rthresh, prob_forecast(ixa,jya,ithresh)
                     
-            END DO  ! ithresh
-        END DO  ! ixa
-    END DO   ! jya
+            END DO  ! ixa
+        END DO  ! jya
+        write (6,fmt='(A40,f8.4)') 'Raw probabilities for thresh = ',rthresh
+        write (6,fmt='(3(A10,1X))')'MIN','MAX','MEAN'
+        write (6,fmt='(1X,3(F10.5,1X))')minval(prob_forecast(:,:,ithresh)), &
+            maxval(prob_forecast(:,:,ithresh)), &
+            sum(prob_forecast(:,:,ithresh))/REAL(nxa*nya)
+    END DO   ! ithresh
+
+    
     !PRINT *,'RAW POP min, max, mean =', minval(prob_forecast(:,:,1)), &
     !    maxval(prob_forecast(:,:,1)), sum(prob_forecast(:,:,1))/(nya*nxa) 
     !PRINT *, 'prob_forecast(1:nxa:10,nya/2,1) = ', prob_forecast(1:nxa:10,nya/2,1)

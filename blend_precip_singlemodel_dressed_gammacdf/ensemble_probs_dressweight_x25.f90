@@ -65,6 +65,9 @@ DO ithresh = 1, nthreshes
     DO jya = 1, nya
         DO ixa = 1, nxa
 
+    !DO jya = 52, 52
+    !    DO ixa = 123, 123
+
             !IF (iprint .eq. 1) &
             !PRINT *,'====== PROCESSING ixa, jya, mask, rthresh = ', &
             !    ixa, jya, conusmask(ixa,jya), rthresh
@@ -81,7 +84,7 @@ DO ithresh = 1, nthreshes
                 ipcat = ipcat-1 ! reduce index b/c we don't care about gamma dist for near zero
                 !IF (iprint .eq. 1) PRINT *, ' ixa, jya, emean, ipcat = ', ixa, jya, emean, ipcat 
                 !IF (ixa .eq. 352 .and. jya .eq. 2) THEN
-                !    PRINT *,'ensemble_sorted = ', ensemble_sorted
+                !PRINT *,'ensemble_sorted = ', ensemble_sorted
                 !ENDIF
 
                 IF (emean .lt. precip_histogram_thresholds(1)) THEN    
@@ -99,8 +102,12 @@ DO ithresh = 1, nthreshes
                     beta = gamma_scale_fclimpop(iclim) 
                     fz = fraction_zeros_fclimpop(iclim) 
                     ksi = rthresh / beta
-                    CALL cumgam(ksi, alpha, cum, ccum)
-                    sumprobability = (1.-fz)*ccum
+                    IF (alpha .ne. alpha) THEN ! happens only when NaN
+                        sumprobability = 0.
+                    ELSE
+                        CALL cumgam(ksi, alpha, cum, ccum)
+                        sumprobability = (1.-fz)*ccum
+                    ENDIF
                     
                 ELSE ! emean .ge. precip_histogram_thresholds(1)
                     
@@ -113,6 +120,7 @@ DO ithresh = 1, nthreshes
                     
                     weights(:) = closest_histogram(:,ipcat)
                     !print *,'weights = ', weights
+                    !print *,'nmembersx25  = ', nmembersx25
                     
                     DO imem = 1, nmembersx25
                         
@@ -135,11 +143,11 @@ DO ithresh = 1, nthreshes
                             ensemble_sorted(imem), ipvlower)
                         ipvupper = ipvlower + 1
                         !IF (iprint .eq. 1) &
-                        !    PRINT *,'   ipvlower, ipcat, ilomidhi, ens = ',&
-                        !    ipvlower, ipcat, ilomidhi, ensemble_sorted(imem)
+                            !PRINT *,'   ipvlower, ipcat, ilomidhi, ens = ',&
+                            !ipvlower, ipcat, ilomidhi, ensemble_sorted(imem)
                         !IF (iprint .eq. 1) &
-                        !    PRINT *,'   precip_values lo/up',precip_values(ipvlower),&    
-                        !    precip_values(ipvupper)
+                            !PRINT *,'   precip_values lo/up',precip_values(ipvlower),&    
+                            !precip_values(ipvupper)
                         weight_gamma_to_lower = 1.0 - &
                             (ensemble_sorted(imem) - precip_values(ipvlower)) / &
                             (precip_values(ipvupper) - precip_values(ipvlower)) 
@@ -171,9 +179,9 @@ DO ithresh = 1, nthreshes
                             1001 CONTINUE    
                         ENDIF
 
-                            !IF (iprint .eq. 1) &
-                            !    PRINT *,'   ipvlower, ipcat, ilomidhi, fz = ', &
-                            !    ipvlower, ipcat, ilomidhi, fz 
+                        !IF (iprint .eq. 1) &
+                        !    PRINT *,'   ipvlower, ipcat, ilomidhi, fz = ', &
+                        !    ipvlower, ipcat, ilomidhi, fz 
                             
                         IF (ilomidhi .eq. 1 .or. ilomidhi .eq. 3) THEN
                             
@@ -221,12 +229,13 @@ DO ithresh = 1, nthreshes
                         !    PRINT 206,'  sumprob, ens, ccum, fz, wgt = ',&
                         !    sumprobability, ensemble_sorted(imem), ccum, fz, &
                         !    weights(imem)
-                        206 format(a37,5(f10.6,1x))
+                        !206 format(a37,5(f10.6,1x))
                         
                     END DO ! imem
                     IF (sumprobability .gt. 0.9999) sumprobability = 1.0
                     IF (sumprobability .lt. 0.0) sumprobability = 0.0
-                    !IF (iprint .eq. 1) PRINT *,'   sumprobability = ', sumprobability
+                    !IF (iprint .eq. 1) &
+                    !    PRINT *,'   sumprobability = ', sumprobability
                     
                 ENDIF ! use climatological probability or gamma/normal distributions.
                 prob_forecast(ixa,jya,ithresh) = sumprobability
@@ -234,10 +243,10 @@ DO ithresh = 1, nthreshes
                 prob_forecast(ixa,jya,ithresh) = prob_forecast_qmapped(ixa,jya,ithresh)
             ENDIF ! conusmask
             
-            IF (prob_forecast(ixa,jya,ithresh) .lt. 0.0) THEN
-                PRINT *,'ixa, jya, ithresh, prob_forecast ',&
-                    ixa,jya,ithresh,prob_forecast(ixa,jya,ithresh)
-            ENDIF
+            !IF (prob_forecast(ixa,jya,ithresh) .lt. 0.0) THEN
+            !    PRINT *,'ixa, jya, ithresh, prob_forecast ',&
+            !        ixa,jya,ithresh,prob_forecast(ixa,jya,ithresh)
+            !ENDIF
             
         END DO ! ixa
     END DO ! jya

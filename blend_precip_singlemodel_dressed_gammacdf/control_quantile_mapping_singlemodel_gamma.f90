@@ -3,7 +3,7 @@ SUBROUTINE control_quantile_mapping_singlemodel_gamma(nxa, nya,  &
     gamma_shape_qmap_forecast, gamma_scale_qmap_forecast, &
     fraction_zero_qmap_forecast, gamma_shape_qmap_analysis, &
     gamma_scale_qmap_analysis, fraction_zero_qmap_analysis, &
-    ensemble_ccpa_x25)
+    ensemble_ccpa_x25, ensmean, stddev, POP)
     
 INTEGER, INTENT(IN) :: nxa, nya ! grid dimensions 
 INTEGER, INTENT(IN) :: nstride ! stride length when skipping grid pts
@@ -24,6 +24,8 @@ REAL, INTENT(IN), DIMENSION(nxa, nya) :: gamma_scale_qmap_analysis
 REAL, INTENT(IN), DIMENSION(nxa, nya) :: fraction_zero_qmap_analysis
 
 REAL, INTENT(OUT), DIMENSION(n25,nxa,nya,nens)  :: ensemble_ccpa_x25
+REAL, INTENT(OUT), DIMENSION(nxa, nya) :: ensmean, stddev, POP
+
 
 REAL, DIMENSION(n25,nxa,nya) :: forecast_x25 ! work array
 
@@ -38,14 +40,21 @@ DO imem = 1, nens
         imemout = imem
     ENDIF
     PRINT *,'****  processing imem, imemout = ',imem
+
     CALL quantile_map_x25_gamma2(nxa, nya, nstride, n25, &
         nens_qmap, conusmask, gamma_shape_qmap_forecast(1,1,imemout), &
         gamma_scale_qmap_forecast(1,1,imemout), fraction_zero_qmap_forecast(1,1,imemout), &
         gamma_shape_qmap_analysis(1,1), gamma_scale_qmap_analysis(1,1), &
         fraction_zero_qmap_analysis(1,1), ensemble_ccpa(1,1,imem), &
         forecast_x25)
+    PRINT *,'      max(ensemble_ccpa), max(forecast_x25)', &
+        maxval(ensemble_ccpa(:,:,imem)), maxval(forecast_x25)
     ensemble_ccpa_x25(:,:,:,imem) = forecast_x25(:,:,:)
 END DO
+
+PRINT *,'calling calc_mean_spread'
+CALL calc_mean_spread(n25, nxa, nya, nens, &
+    ensemble_ccpa_x25, conusmask, ensmean, stddev, POP)
 
 RETURN
 END SUBROUTINE control_quantile_mapping_singlemodel_gamma
