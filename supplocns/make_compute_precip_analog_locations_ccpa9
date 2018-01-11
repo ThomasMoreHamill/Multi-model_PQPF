@@ -16,4 +16,4 @@ INC2 = -I/usr/local/gfortran/include
 INC = -I/opt/local/include
 
 all: 
-	$(FC) $(FFLAGS) $(INC) $(INC2) -o supplemental_locations_eighth_degree.x supplemental_locations_eighth_degree.f90 read_climatology_parameters.f90 read_terrain_heights.f90 check.f90 calculate_terrain_gradients.f90 $(LIB) -lnetcdf -lhdf5 -lhdf5_hl -lnetcdff
+	$(FC) $(FFLAGS) $(INC) $(INC2) -o compute_precip_analog_locations_ccpa9.x compute_precip_analog_locations_ccpa9.f90 check.f90 load_precipquantiles_ccpa_analonly_v9.f90 read_facets.f90 $(LIB) -lnetcdf -lhdf5 -lhdf5_hl -lnetcdff

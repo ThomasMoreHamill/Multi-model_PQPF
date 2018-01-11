@@ -1,0 +1,81 @@
+nyat, nxat =  1597 2345
+/Projects/Reforecast2/netcdf/NationalBlend/ccpa2p5.201607.nc
+nya, nxa =  1597 2345
+lats_terrain[0,0], lats[0,0] =  19.229 19.229
+lons_terrain[0,0], lons[0,0] =  233.723 233.723
+************** processing month =  Jan
+  processing  00  to  12  UTC
+processing year =  2002
+processing year =  2003
+processing year =  2004
+processing year =  2005
+processing year =  2006
+processing year =  2007
+processing year =  2008
+processing year =  2009
+processing year =  2010
+processing year =  2011
+processing year =  2012
+processing year =  2013
+processing year =  2014
+processing year =  2015
+processing year =  2016
+conusmask:   no data at python index j,i,lat,lon =  902 2142 41.1981 289.983
+conusmask:   no data at python index j,i,lat,lon =  903 2143 41.2156 290.017
+conusmask:   no data at python index j,i,lat,lon =  904 2143 41.2372 290.022
+npthreshes, nya, nxa =  8 1597 2345
+ 
+    for input precip amount thresholds in rthreshes array, and given 
+    fraction zero and gamma distribution alpha and beta parameters,
+    determine the cumulative non-exceedance probability associated
+    with this input threshold.
+    
+    coded by Tom Hamill, tom.hamill@noaa.gov, (303) 497-3060
+    
+    compile with python setup_calculate_quantile_for_precip_values.py build_ext --inplace
+    
+    
+processing  0  of  2345
+processing  20  of  2345
+processing  40  of  2345
+processing  60  of  2345
+processing  80  of  2345
+processing  100  of  2345
+processing  120  of  2345
+processing  140  of  2345
+processing  160  of  2345
+processing  180  of  2345
+processing  200  of  2345
+processing  220  of  2345
+processing  240  of  2345
+processing  260  of  2345
+processing  280  of  2345
+processing  300  of  2345
+processing  320  of  2345
+processing  340  of  2345
+processing  360  of  2345
+processing  380  of  2345
+processing  400  of  2345
+processing  420  of  2345
+processing  440  of  2345
+processing  460  of  2345
+processing  480  of  2345
+processing  500  of  2345
+processing  520  of  2345
+processing  540  of  2345
+processing  560  of  2345
+processing  580  of  2345
+processing  600  of  2345
+processing  620  of  2345
+processing  640  of  2345
+processing  660  of  2345
+processing  680  of  2345
+processing  700  of  2345
+processing  720  of  2345
+processing  740  of  2345
+processing  760  of  2345
+processing  780  of  2345
+processing  800  of  2345
+processing  820  of  2345
+processing  840  of  2345
+processing  860  of  2345

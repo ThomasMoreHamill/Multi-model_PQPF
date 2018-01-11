@@ -1,4 +1,4 @@
-PROGRAM supplemental_locations_ndfd2p5
+PROGRAM supplemental_locations_ndfd2p5_indexed
 
 ! purpose:  For every (i,j) in on the 2.5-km NDFD Climatology-Calibrated
 !    Precipitation Analysis (CCPA; see Hou et al. 2014, available at
@@ -16,6 +16,7 @@ USE netcdf
 PARAMETER (nyears = 15) ! 2002-2016 here for the CCPA data
 PARAMETER (nxa = 2145) ! NDFD 2.5 km grid x dimensions for expanded grid.
 PARAMETER (nya = 1597) ! NDFD 2.5 km grid y dimensions for expanded grid
+PARAMETER (npoints = nxa*nya)
 PARAMETER (nmonths = 12) ! # months of the year
 PARAMETER (nsupplemental = 50) ! max number of CCPA grid supplemental locations  
     ! to be stored for a given forecast grid box ! prev 20
@@ -33,7 +34,9 @@ PARAMETER (grady_coeff = 0.15)  ! coefficient to apply to terrain x gradient dif
 PARAMETER (distpenalty = .0001) ! coefficient to apply to distance  
 PARAMETER (earth_radius_meters = 6370000.)
 
+INTEGER, DIMENSION(2) :: mindices
 INTEGER*2, DIMENSION(nxa,nya) :: conusmask  ! 1/0 mask for whether in CONUS
+INTEGER*2, DIMENSION(npoints) :: conusmask_1d  ! 1/0 mask for whether in CONUS
 INTEGER*2, DIMENSION(nxa,nya) :: maskout  ! array used to block out nearby points !
                            ! from further consideration
 INTEGER, DIMENSION(nxa,nya,nsupplemental) :: xlocation_supp ! for each forecast point,  
@@ -42,6 +45,8 @@ INTEGER, DIMENSION(nxa,nya,nsupplemental) :: ylocation_supp ! have the closest c
                            ! and forecast-obs relationship
 INTEGER minx
 INTEGER miny
+INTEGER, DIMENSION(nxa,nya) :: i_index ! i coordinate on grid
+INTEGER, DIMENSION(nxa,nya) :: j_index ! j coordinate on grid
 
 REAL, DIMENSION(nxa,nya) :: alphahat ! estimated Gamma dist shape parameter read in from file
 REAL, DIMENSION(nxa,nya) :: alphahat_mean  ! local spatial mean of alpha parameter
@@ -52,13 +57,14 @@ REAL, DIMENSION(nxa,nya) :: betahat_stddev ! local spatial std dev of beta param
 
 REAL, DIMENSION(nxa,nya) :: difference ! total penalty difference between (ixa,jya) 
 !  and potential supplemental (ixn,jyn)
-REAL, DIMENSION(nxa,nya) :: difference_alpha ! Gamma dist alpha parameter penalty
-REAL, DIMENSION(nxa,nya) :: difference_beta ! Gamma dist beta parameter penalty
-REAL, DIMENSION(nxa,nya) :: difference_fz ! fraction zero penalty
-REAL, DIMENSION(nxa,nya) :: difference_terht  ! terrain height penalty
-REAL, DIMENSION(nxa,nya) :: difference_gradx  ! E-W terrain height gradient penalty
-REAL, DIMENSION(nxa,nya) :: difference_grady  ! N-S terrain height gradient penalty
-REAL, DIMENSION(nxa,nya) :: difference_dist ! physical distance penalty
+!REAL, DIMENSION(nxa,nya) :: difference_alpha ! Gamma dist alpha parameter penalty
+!REAL, DIMENSION(nxa,nya) :: difference_beta ! Gamma dist beta parameter penalty
+!REAL, DIMENSION(nxa,nya) :: difference_fz ! fraction zero penalty
+!REAL, DIMENSION(nxa,nya) :: difference_terht  ! terrain height penalty
+!REAL, DIMENSION(nxa,nya) :: difference_gradx  ! E-W terrain height gradient penalty
+!REAL, DIMENSION(nxa,nya) :: difference_grady  ! N-S terrain height gradient penalty
+!REAL, DIMENSION(nxa,nya) :: difference_dist ! physical distance penalty
+REAL, DIMENSION(nxa,nya) :: difference_init_large
 REAL, DIMENSION(nxa,nya) :: fraction_zero ! estimated fraction zero parameter from file
 REAL, DIMENSION(nxa,nya) :: fz_mean ! local spatial mean of fraction zero parameter
 REAL, DIMENSION(nxa,nya) :: fz_stddev ! local spatial std dev of fraction zero parameter
@@ -75,6 +81,8 @@ REAL, DIMENSION(nxa,nya) :: terrain_gradx ! terrain E-W gradient
 REAL, DIMENSION(nxa,nya) :: terrain_grady ! terrain N-S gradient
 REAL, DIMENSION(nxa,nya) :: ter_mean
 REAL, DIMENSION(nxa,nya) :: ter_stddev
+
+INTEGER*2, DIMENSION(nxa, nya) :: iconsider
 
 REAL time1, time2
 
@@ -110,7 +118,7 @@ ylocation = -99
 xlocation_supp = -99
 ylocation_supp = -99
 
-! ---- initialize penalties
+! ---- initialize 
 
 penalty = 0.
 penalty_alpha = 0.
@@ -120,22 +128,37 @@ penalty_ter = 0.
 penalty_gradx = 0.
 penalty_grady = 0.
 penalty_dist = 0.
+DO jya = 1, nya
+    DO ixa = 1, nxa
+        i_index(ixa,jya) = ixa
+        j_index(ixa,jya) = jya
+    END DO
+END DO
+difference_init_large = 999999999.
 
 ! ---- read in terrain facet information for smoothing 
 !      at short, intermediate, and larger scales
 
 infile = TRIM(data_directory) // 'blend.precip_const.2p5.nc'
-PRINT *,'calling read_terrain_heights_2p5'
-PRINT *,TRIM(infile)
+PRINT *, 'calling read_terrain_heights_2p5'
+PRINT *, TRIM(infile)
 CALL read_terrain_heights_2p5(nxa, nya, infile, terrain, &
     lonsa, latsa, conusmask)
+npoints_in_conus = SUM(INT(conusmask))
+ktr = 0
+DO jya = 1, nya
+    DO ixa = 1, nxa
+        ktr = ktr+1
+        conusmask_1d(ktr) = conusmask(ixa,jya)
+    END DO
+END DO     
 
 ! ---- calculate terrain gradients
 
 PRINT *, 'calling calculate_terrain_gradients'
 CALL calculate_terrain_gradients(nxa, nya, earth_radius_meters, &
     terrain, latsa, terrain_gradx, terrain_grady)
-     
+    
 ! ---- loop over months
 
 !DO imonth = 4, 4
@@ -151,6 +174,7 @@ DO imonth = 1,12
     PRINT *, TRIM(infile)
     CALL read_climatology_parameters_ndfd2p5(nxa, nya, infile, &
         fraction_zero, alphahat, betahat)  
+    
              
     ! ---- loop thru grid points and precompute statistics for mean, std dev
     !      of alpha, beta, fraction zero, and terrain.  These will be used to
@@ -281,34 +305,43 @@ DO imonth = 1,12
     CALL cpu_time(time1)
     PRINT *, 'finding supplemental locations'
     nproc = 0
-   
+
+    ktrpoint = 0
     DO ixa = 1, nxa
-        
+    !DO ixa = nxa/3, nxa/3
         CALL cpu_time(time2)
         IF (MOD(ixa,10) .eq. 0) PRINT *,'ixa = ',ixa,' of ',nxa, &
 	  	    ' time elapsed, delta: ',time2, time2-time1,'nproc = ', &
             nproc,' total pts = ',SUM(REAL(conusmask))
-            
         DO jya = 1, nya
-
-            ! ---- FROM ERIC...Initializing all of these (2145x1597) arrays at EVERY gridpoint
-	    !      iteration could definitely be hurting.  Adding OpenMP here.
-!$OMP PARALLEL DO DEFAULT(SHARED) COLLAPSE(2) PRIVATE(jj,ii)
-	    do jj=1,nya
-	       do ii=1,nxa
-                  maskout(ii,jj) = 0
-                  difference_alpha(ii,jj) = 99999999. 
-                  difference_beta(ii,jj) = 99999999.
-                  difference_fz(ii,jj) = 99999999.
-                  difference_terht(ii,jj) = 99999999.
-                  difference_gradx(ii,jj) = 99999999.
-                  difference_grady(ii,jj) = 99999999.
-                  difference_dist(ii,jj) = 99999999.
-	       end do ! ii=1,nxa
-	    end do ! jj=1,nya
-!$OMP END PARALLEL DO
+        !DO jya = nya/2, nya/2
 
             IF (conusmask(ixa,jya) .gt. 0) THEN ! grid point inside area with CCPA data
+                
+                maskout(:,:) = 1-conusmask(:,:)
+                difference(:,:) = difference_init_large(:,:) 
+    	        !difference_alpha(:,:) = difference_init_large(:,:) 
+                !difference_beta(:,:) = difference_init_large(:,:) 
+                !difference_fz(:,:) = difference_init_large(:,:) 
+                !difference_terht(:,:) = difference_init_large(:,:) 
+                !difference_gradx(:,:) = difference_init_large(:,:) 
+                !difference_grady(:,:) = difference_init_large(:,:) 
+                !difference_dist(:,:) = difference_init_large(:,:)
+                
+                ! ---- rather than examining all points for their closeness to the 
+                !      current grid point's alpha, beta, fraction zero, and terrain
+                !      values, let's thin down the number of grid points to examine
+                !      to a smaller set that have similar values
+                
+                ktrpoint = ixa + (jya-1)*nxa
+                
+                iconsider = conusmask
+                alphahat_min = MAX(0.001,alphahat(ixa,jya) - alphahat_stddev(ixa,jya))
+                alphahat_max = alphahat(ixa,jya) + alphahat_stddev(ixa,jya)
+                betahat_min = MAX(0.001,betahat(ixa,jya) - betahat_stddev(ixa,jya))
+                betahat_max = betahat(ixa,jya) + betahat_stddev(ixa,jya)
+                fraction_zero_min = MAX(0.001,fraction_zero(ixa,jya) - fz_stddev(ixa,jya))
+                fraction_zero_max = fraction_zero(ixa,jya) + fz_stddev(ixa,jya)
 
                 nproc = nproc+1
                 imin = max(1,ixa-maxseparation)
@@ -327,70 +360,74 @@ DO imonth = 1,12
                 gradx_coeff2 = gradx_coeff * SQRT(gradx_stddev(ixa,jya)) / gradxmax_sqrt
                 grady_coeff2 = grady_coeff * SQRT(grady_stddev(ixa,jya)) / gradymax_sqrt
 
-!$OMP PARALLEL DO DEFAULT(SHARED) COLLAPSE(2) PRIVATE(ix2,jy2,dist,fz_there,alpha_there,beta_there,gradx_there) &
-!$OMP PRIVATE(grady_there,ter_there,fz_diff,alpha_diff,beta_diff,gradx_diff,grady_diff,terr_diff) &
+                nconsider = 0
                 DO ix2 = imin, imax
                     DO jy2 = jmin, jmax
+                        
+                        IF (conusmask(ix2,jy2) .gt. 0) THEN
+                            IF (alphahat(ix2,jy2) .ge. alphahat_min .and. &
+                            alphahat(ix2,jy2) .le. alphahat_max .and. & 
+                            betahat(ix2,jy2) .ge. betahat_min .and. &
+                            betahat(ix2,jy2) .le. betahat_max .and. &
+                            fraction_zero(ix2,jy2) .ge. fraction_zero_min .and. &
+                            fraction_zero(ix2,jy2) .le. fraction_zero_max) THEN
 
-                        ! ---- only consider this grid point if inside area with data, 
-                        !      and is less than max separation, computed in 1/8-degree 
-                        !      grid points.  Since there is less trustworthy data outside 
-                        !      CONUS (lots of problems over ocean, over Canada at this  
-                        !      point, supplement data only with points from inside CONUS
+                                ! ---- Also, only consider this grid point if inside area with data, 
+                                !      and is less than max separation, computed in 1/8-degree 
+                                !      grid points.  Since there is less trustworthy data outside 
+                                !      CONUS (lots of problems over ocean, over Canada at this  
+                                !      point, supplement data only with points from inside CONUS
 
-                        CALL haversine(latsa(ixa,jya), lonsa(ixa,jya), &
-                            latsa(ix2,jy2), lonsa(ix2,jy2), dist)
+                                CALL haversine(latsa(ixa,jya), lonsa(ixa,jya), &
+                                    latsa(ix2,jy2), lonsa(ix2,jy2), dist)
 
-                        IF (conusmask(ix2,jy2) .gt. 0 .and. maskout(ix2,jy2) &
-                        .eq. 0 .and. dist .le. maxseparation) THEN
+                                IF (dist .le. maxseparation) THEN
                             
-                            fz_there = fraction_zero(ix2,jy2)
-                            alpha_there = alphahat(ix2,jy2)
-                            beta_there = betahat(ix2,jy2)
-                            gradx_there = terrain_gradx(ix2,jy2)
-                            grady_there = terrain_grady(ix2,jy2)
-                            ter_there = terrain(ix2,jy2)
+                                    nconsider = nconsider + 1
+                                    fz_there = fraction_zero(ix2,jy2)
+                                    alpha_there = alphahat(ix2,jy2)
+                                    beta_there = betahat(ix2,jy2)
+                                    gradx_there = terrain_gradx(ix2,jy2)
+                                    grady_there = terrain_grady(ix2,jy2)
+                                    ter_there = terrain(ix2,jy2)
 
-                            ! --- quantify the difference between fraction zero, alpha, beta 
+                                    ! --- quantify the difference between fraction zero, alpha, beta 
 
-                            fz_diff = ABS(fz_here - fz_there) / fz_stddev(ixa,jya) 
-                            alpha_diff = ABS(alpha_here - alpha_there) / alphahat_stddev(ixa,jya)
-                            beta_diff = ABS(beta_here - beta_there) / betahat_stddev(ixa,jya)
-                            gradx_diff = ABS(gradx_here - gradx_there) / gradx_stddev(ixa,jya)
-                            grady_diff = ABS(grady_here - grady_there) / grady_stddev(ixa,jya)
-                            terr_diff = ABS(ter_here - ter_there) / ter_stddev(ixa,jya)
+                                    fz_diff = ABS(fz_here - fz_there) / fz_stddev(ixa,jya) 
+                                    alpha_diff = ABS(alpha_here - alpha_there) / alphahat_stddev(ixa,jya)
+                                    beta_diff = ABS(beta_here - beta_there) / betahat_stddev(ixa,jya)
+                                    gradx_diff = ABS(gradx_here - gradx_there) / gradx_stddev(ixa,jya)
+                                    grady_diff = ABS(grady_here - grady_there) / grady_stddev(ixa,jya)
+                                    terr_diff = ABS(ter_here - ter_there) / ter_stddev(ixa,jya)
 
-                            ! --- calculate differences between this potential supplemental location
-                            !     and the grid point of interest for each of the various factors 
-                            !     we choose to weight 
+                                    ! --- calculate differences between this potential supplemental location
+                                    !     and the grid point of interest for each of the various factors 
+                                    !     we choose to weight 
                             
-                            difference_alpha(ix2,jy2) = alpha_coeff*alpha_diff 
-                            difference_beta(ix2,jy2) = beta_coeff*beta_diff
-                            difference_fz(ix2,jy2) = fz_coeff*fz_diff
-                            difference_terht(ix2,jy2) = terht_coeff2*terr_diff
-                            difference_gradx(ix2,jy2) = gradx_coeff2*gradx_diff
-                            difference_grady(ix2,jy2) = grady_coeff2*grady_diff
-                            difference_dist(ix2,jy2) = dist*distpenalty
-                            difference(ix2,jy2) = difference_alpha(ix2,jy2) + &
-                                difference_beta(ix2,jy2) + difference_fz(ix2,jy2) + &
-                                difference_terht(ix2,jy2) + difference_gradx(ix2,jy2) + &
-                                difference_grady(ix2,jy2) + difference_dist(ix2,jy2)                    
-                     
-                        ELSE
-                      
-                            difference_alpha(ix2,jy2) = 99999999.
-                            difference_beta(ix2,jy2) = 99999999.
-                            difference_fz(ix2,jy2) = 99999999.
-                            difference_terht(ix2,jy2) = 99999999.
-                            difference_gradx(ix2,jy2) = 99999999.
-                            difference_grady(ix2,jy2) = 99999999.
-                            difference_dist(ix2,jy2) = 99999999.
-                            difference(ix2,jy2) = 99999999.
+                                    !difference_alpha(ix2,jy2) = alpha_coeff*alpha_diff 
+                                    !difference_beta(ix2,jy2) = beta_coeff*beta_diff
+                                    !difference_fz(ix2,jy2) = fz_coeff*fz_diff
+                                    !difference_terht(ix2,jy2) = terht_coeff2*terr_diff
+                                    !difference_gradx(ix2,jy2) = gradx_coeff2*gradx_diff
+                                    !difference_grady(ix2,jy2) = grady_coeff2*grady_diff
+                                    !difference_dist(ix2,jy2) = dist*distpenalty
+                                    !difference(ix2,jy2) = difference_alpha(ix2,jy2) + &
+                                    !    difference_beta(ix2,jy2) + difference_fz(ix2,jy2) + &
+                                    !    difference_terht(ix2,jy2) + difference_gradx(ix2,jy2) + &
+                                    !    difference_grady(ix2,jy2) + difference_dist(ix2,jy2)
+                                    difference(ix2,jy2) = alpha_coeff*alpha_diff  + &
+                                        beta_coeff*beta_diff + fz_coeff*fz_diff + &
+                                        terht_coeff2*terr_diff + gradx_coeff2*gradx_diff + &
+                                        grady_coeff2*grady_diff + dist*distpenalty                    
 
-                        ENDIF
+                                ENDIF ! dist .le. maxseparation
+                            ELSE
+                                maskout(ix2,jy2) = 1 ! don't consider this grid point
+                            ENDIF ! alphahat(ix2,jy2) .ge. alphahat_min, etc
+                        ENDIF ! conusmask(ix2,jy2) 
                     END DO ! jy2
                 END DO ! ix2
-!$OMP END PARALLEL DO
+                !PRINT *,'considered ', nconsider,' out of ',(imax-imin+1)*(jmax-jmin+1)
 
                 DO isupp = 1, nsupplemental  ! number of supplemental locations
 
@@ -399,18 +436,11 @@ DO imonth = 1,12
                                      
                         xlocation_supp(ixa,jya,isupp) = ixa
                         ylocation_supp(ixa,jya,isupp) = jya
-
+                        
                         ! ---- don't consider points right around grid pt of interest,
                         !      too strong a correlation (want quasi-independent samples)
 
                         diffmin = 0.
-                        diffmin_alpha = 0.
-                        diffmin_beta = 0.
-                        diffmin_fz = 0.
-                        diffmin_terht = 0.
-                        diffmin_gradx = 0.
-                        diffmin_grady = 0.
-                        diffmin_dist = 0.
                         CALL mask_around_thisgridpt(ixa, jya, nxa, nya, &
                             minseparation, maskout)
 
@@ -421,23 +451,23 @@ DO imonth = 1,12
 				        !      point and then mask around this to eliminate nearby
 				        !      points from any future consideration
 
-                        minx = -99
-                        miny = -99
-                        diffmin = 999999.
+                        mindices = MINLOC(difference)
+                        minx = mindices(1)
+                        miny = mindices(2)
                         
-
-                        DO ix2 = imin, imax   !1, nxa
-                            DO jy2 = jmin, jmax  !1, nya
-
-                                IF (difference(ix2,jy2) .lt. diffmin .and. &
-                                maskout(ix2,jy2) .eq. 0 .and. &
-                                conusmask(ix2,jy2) .gt. 0) THEN
-                                    diffmin = difference(ix2,jy2)
-                                    minx = ix2
-                                    miny = jy2
-                                END IF
-                            END DO ! jy2
-                        END DO  ! ix2
+                        !minx = -99
+                        !miny = -99
+                        !diffmin = 999999.
+                        !DO ix2 = imin, imax   !1, nxa
+                        !    DO jy2 = jmin, jmax  !1, nya
+                        !        IF (difference(ix2,jy2) .lt. diffmin .and. &
+                        !        maskout(ix2,jy2) .eq. 0) THEN
+                        !            diffmin = difference(ix2,jy2)
+                        !            minx = ix2
+                        !            miny = jy2
+                        !        END IF
+                        !    END DO ! jy2
+                        !END DO  ! ix2
                
                         ! ---- finally, define the supplemental 
 				        !      location on the forecast grid to be the 
@@ -454,6 +484,8 @@ DO imonth = 1,12
                             minseparation, maskout)
 
                     ENDIF ! isupp > 1
+                    
+                    !PRINT *,'isupp, x, y = ',isupp, xlocation_supp(ixa,jya,isupp), ylocation_supp(ixa,jya,isupp)
 
                 END DO ! isupp
             ENDIF   ! conusmask
@@ -583,6 +615,7 @@ PRINT *, "*** SUCCESS writing netcdf file "
 RETURN
 END SUBROUTINE write_supp_locns_to_netcdf
 
+
 ! ==================================================================
 
-END PROGRAM supplemental_locations_ndfd2p5
+END PROGRAM supplemental_locations_ndfd2p5_indexed

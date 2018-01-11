@@ -1,0 +1,19 @@
+
+#FFLAGS77 = -c
+#FFLAGS   = -check all
+#FFLAGSC   = -c
+#FC = /usr/bin/ifort
+#LIB = -L/usr/local/ifort/lib
+#INC = -I/usr/local/ifort/include
+
+FFLAGS77 = -c -C -O4 -fcheck=all -fbacktrace 
+FFLAGS   = -C -O4 -fbacktrace -std=f95 -fall-intrinsics  -fcheck=all 
+FFLAGSC   = -c -C -O4 -std=f95 -fall-intrinsics 
+
+FC = gfortran
+LIB = -L/opt/local/lib -L/usr/local/gfortran/lib 
+INC2 = -I/usr/local/gfortran/include
+INC = -I/opt/local/include
+
+all: 
+	$(FC) $(FFLAGS) $(INC) $(INC2) -o create_supp_locns_ndfd2p5.x create_supp_locns_ndfd2p5.f90 check.f90 read_supp_locns_ccpa.f90 read_terr_ht_and_facets_2p5.f90 determine_nearest_ccpa.f90 load_precipquantiles_2p5.f90 $(LIB) -lnetcdf -lhdf5 -lhdf5_hl -lnetcdff

@@ -1,0 +1,4 @@
+#!/bin/tcsh
+create_supp_locns_ndfd2p5_monthly.x 10
+create_supp_locns_ndfd2p5_monthly.x 11
+create_supp_locns_ndfd2p5_monthly.x 12

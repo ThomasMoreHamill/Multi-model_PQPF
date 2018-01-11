@@ -44,21 +44,42 @@ INTEGER minx
 INTEGER miny
 
 REAL, DIMENSION(nxa,nya) :: alphahat ! estimated Gamma dist shape parameter read in from file
-REAL, DIMENSION(nxa,nya) :: alphahat_mean  ! local spatial mean of alpha parameter
-REAL, DIMENSION(nxa,nya) :: alphahat_stddev ! local spatial std dev of alpha parameter
 REAL, DIMENSION(nxa,nya) :: betahat ! estimated Gamma dist scale parameter read in from file
-REAL, DIMENSION(nxa,nya) :: betahat_mean ! local spatial mean of beta parameter
-REAL, DIMENSION(nxa,nya) :: betahat_stddev ! local spatial std dev of beta parameter
+INTEGER, DIMENSION(nxa,nya) :: ialphahat ! estimated Gamma dist shape parameter read in from file
+INTEGER, DIMENSION(nxa,nya) :: ibetahat ! estimated Gamma dist scale parameter read in from file
 
-REAL, DIMENSION(nxa,nya) :: difference ! total penalty difference between (ixa,jya) 
+!REAL, DIMENSION(nxa,nya) :: alphahat_mean  ! local spatial mean of alpha parameter
+!REAL, DIMENSION(nxa,nya) :: alphahat_stddev ! local spatial std dev of alpha parameter
+!REAL, DIMENSION(nxa,nya) :: betahat_mean ! local spatial mean of beta parameter
+!REAL, DIMENSION(nxa,nya) :: betahat_stddev ! local spatial std dev of beta parameter
+
+INTEGER*4, DIMENSION(nxa,nya) :: ialphahat_mean  ! local spatial mean of alpha parameter
+INTEGER*4, DIMENSION(nxa,nya) :: ialphahat_stddev ! local spatial std dev of alpha parameter
+INTEGER*4, DIMENSION(nxa,nya) :: ibetahat_mean ! local spatial mean of beta parameter
+INTEGER*4, DIMENSION(nxa,nya) :: ibetahat_stddev ! local spatial std dev of beta parameter
+
+!REAL, DIMENSION(nxa,nya) :: difference ! total penalty difference between (ixa,jya) 
 !  and potential supplemental (ixn,jyn)
-REAL, DIMENSION(nxa,nya) :: difference_alpha ! Gamma dist alpha parameter penalty
-REAL, DIMENSION(nxa,nya) :: difference_beta ! Gamma dist beta parameter penalty
-REAL, DIMENSION(nxa,nya) :: difference_fz ! fraction zero penalty
-REAL, DIMENSION(nxa,nya) :: difference_terht  ! terrain height penalty
-REAL, DIMENSION(nxa,nya) :: difference_gradx  ! E-W terrain height gradient penalty
-REAL, DIMENSION(nxa,nya) :: difference_grady  ! N-S terrain height gradient penalty
-REAL, DIMENSION(nxa,nya) :: difference_dist ! physical distance penalty
+!REAL, DIMENSION(nxa,nya) :: difference_alpha ! Gamma dist alpha parameter penalty
+!REAL, DIMENSION(nxa,nya) :: difference_beta ! Gamma dist beta parameter penalty
+!REAL, DIMENSION(nxa,nya) :: difference_fz ! fraction zero penalty
+!REAL, DIMENSION(nxa,nya) :: difference_terht  ! terrain height penalty
+!REAL, DIMENSION(nxa,nya) :: difference_gradx  ! E-W terrain height gradient penalty
+!REAL, DIMENSION(nxa,nya) :: difference_grady  ! N-S terrain height gradient penalty
+!REAL, DIMENSION(nxa,nya) :: difference_dist ! physical distance penalty
+
+INTEGER*4, DIMENSION(nxa,nya) :: idifference ! total penalty difference between (ixa,jya) 
+!  and potential supplemental (ixn,jyn)
+INTEGER*4, DIMENSION(nxa,nya) :: idifference_alpha ! Gamma dist alpha parameter penalty
+INTEGER*4, DIMENSION(nxa,nya) :: idifference_beta ! Gamma dist beta parameter penalty
+INTEGER*4, DIMENSION(nxa,nya) :: idifference_fz ! fraction zero penalty
+INTEGER*4, DIMENSION(nxa,nya) :: idifference_terht  ! terrain height penalty
+INTEGER*4, DIMENSION(nxa,nya) :: idifference_gradx  ! E-W terrain height gradient penalty
+INTEGER*4, DIMENSION(nxa,nya) :: idifference_grady  ! N-S terrain height gradient penalty
+INTEGER*4, DIMENSION(nxa,nya) :: idifference_dist ! physical distance penalty
+
+INTEGER, DIMENSION(nxa,nya) :: ifraction_zero ! estimated fraction zero parameter from file
+
 REAL, DIMENSION(nxa,nya) :: fraction_zero ! estimated fraction zero parameter from file
 REAL, DIMENSION(nxa,nya) :: fz_mean ! local spatial mean of fraction zero parameter
 REAL, DIMENSION(nxa,nya) :: fz_stddev ! local spatial std dev of fraction zero parameter
@@ -73,6 +94,9 @@ REAL, DIMENSION(nxa,nya,nsupplemental) :: penalty  ! penalty function
 REAL, DIMENSION(nxa,nya) :: terrain ! terrain elevation
 REAL, DIMENSION(nxa,nya) :: terrain_gradx ! terrain E-W gradient
 REAL, DIMENSION(nxa,nya) :: terrain_grady ! terrain N-S gradient
+INTEGER, DIMENSION(nxa,nya) :: iterrain ! terrain elevation
+INTEGER, DIMENSION(nxa,nya) :: iterrain_gradx ! terrain E-W gradient
+INTEGER, DIMENSION(nxa,nya) :: iterrain_grady ! terrain N-S gradient
 REAL, DIMENSION(nxa,nya) :: ter_mean
 REAL, DIMENSION(nxa,nya) :: ter_stddev
 
@@ -113,13 +137,7 @@ ylocation_supp = -99
 ! ---- initialize penalties
 
 penalty = 0.
-penalty_alpha = 0.
-penalty_beta = 0.
-penalty_fz = 0.
-penalty_ter = 0.
-penalty_gradx = 0.
-penalty_grady = 0.
-penalty_dist = 0.
+
 
 ! ---- read in terrain facet information for smoothing 
 !      at short, intermediate, and larger scales
@@ -135,6 +153,10 @@ CALL read_terrain_heights_2p5(nxa, nya, infile, terrain, &
 PRINT *, 'calling calculate_terrain_gradients'
 CALL calculate_terrain_gradients(nxa, nya, earth_radius_meters, &
     terrain, latsa, terrain_gradx, terrain_grady)
+    
+iterrain = INT(terrain*10000.)    
+iterrain_gradx = INT(terrain_gradx*10000.)
+iterrain_grady = INT(terrain_grady*10000.)
      
 ! ---- loop over months
 
@@ -151,6 +173,9 @@ DO imonth = 1,12
     PRINT *, TRIM(infile)
     CALL read_climatology_parameters_ndfd2p5(nxa, nya, infile, &
         fraction_zero, alphahat, betahat)  
+    ifraction_zero = INT(fraction_zero*10000.)
+    ialphahat = INT(alphahat*10000.)
+    ibetahat = INT(betahat*10000.)
              
     ! ---- loop thru grid points and precompute statistics for mean, std dev
     !      of alpha, beta, fraction zero, and terrain.  These will be used to
@@ -170,51 +195,87 @@ DO imonth = 1,12
         DO jya = 1, nya
             jymin = MAX(1,jya-10)
             jymax = MIN(nya,jya+10)
-            sum_fz2 = 0.0
-            sum_fz  = 0.0
-            sum_alpha2 = 0.0
-            sum_alpha  = 0.0
-            sum_beta2 = 0.0
-            sum_beta = 0.0
-            sum_gradx = 0.0
-            sum_gradx2 = 0.0
-            sum_grady = 0.0
-            sum_grady2 = 0.0
-            sum_terht = 0.0
-            sum_terht2 = 0.0
+            !sum_fz2 = 0.0
+            !sum_fz  = 0.0
+            !sum_alpha2 = 0.0
+            !sum_alpha  = 0.0
+            !sum_beta2 = 0.0
+            !sum_beta = 0.0
+            !sum_gradx = 0.0
+            !sum_gradx2 = 0.0
+            !sum_grady = 0.0
+            !sum_grady2 = 0.0
+            !sum_terht = 0.0
+            !sum_terht2 = 0.0
+            isum_fz2 = 0
+            isum_fz  = 0
+            isum_alpha2 = 0
+            isum_alpha  = 0
+            isum_beta2 = 0
+            isum_beta = 0
+            isum_gradx = 0
+            isum_gradx2 = 0
+            isum_grady = 0
+            isum_grady2 = 0
+            isum_terht = 0
+            isum_terht2 = 0
             nsamps  = 0
             IF (conusmask(ixa,jya) .gt. 0) THEN ! grid point has valid data
-                fz_here = fraction_zero(ixa,jya)
-                alpha_here = alphahat(ixa,jya)
-                beta_here = betahat(ixa,jya)
-                gradx_here = terrain_gradx(ixa,jya)
-                grady_here = terrain_grady(ixa,jya)
-                ter_here = terrain(ixa,jya)
+                !fz_here = fraction_zero(ixa,jya)
+                !alpha_here = alphahat(ixa,jya)
+                !beta_here = betahat(ixa,jya)
+                !gradx_here = terrain_gradx(ixa,jya)
+                !grady_here = terrain_grady(ixa,jya)
+                !ter_here = terrain(ixa,jya)
+                ifz_here = ifraction_zero(ixa,jya)
+                ialpha_here = ialphahat(ixa,jya)
+                ibeta_here = ibetahat(ixa,jya)
+                igradx_here = iterrain_gradx(ixa,jya)
+                igrady_here = iterrain_grady(ixa,jya)
+                iter_here = iterrain(ixa,jya)
                 DO ix2 = ixmin, ixmax
                     DO jy2 = jymin, jymax
                         IF (conusmask(ix2,jy2).gt. 0) THEN
-                            fz_there = fraction_zero(ix2,jy2)
-                            alpha_there = alphahat(ix2,jy2)
-                            beta_there = betahat(ix2,jy2)
-                            gradx_there = terrain_gradx(ix2,jy2)
-                            grady_there = terrain_grady(ix2,jy2)
-                            ter_there = terrain(ix2,jy2)
+                            !fz_there = fraction_zero(ix2,jy2)
+                            !alpha_there = alphahat(ix2,jy2)
+                            !beta_there = betahat(ix2,jy2)
+                            !gradx_there = terrain_gradx(ix2,jy2)
+                            !grady_there = terrain_grady(ix2,jy2)
+                            !ter_there = terrain(ix2,jy2)
+                            ifz_there = ifraction_zero(ix2,jy2)
+                            ialpha_there = ialphahat(ix2,jy2)
+                            ibeta_there = ibetahat(ix2,jy2)
+                            igradx_there = iterrain_gradx(ix2,jy2)
+                            igrady_there = iterrain_grady(ix2,jy2)
+                            iter_there = iterrain(ix2,jy2)
 					 
                             ! --- quantify the difference between forecast distributions at 
                             !     the two grid points
 					 
-                            sum_fz2 = sum_fz2 + fz_there**2
-                            sum_fz  = sum_fz + fz_there
-                            sum_alpha2 = sum_alpha2 + alpha_there**2
-                            sum_alpha  = sum_alpha + alpha_there
-                            sum_beta2 = sum_beta2 + beta_there**2
-                            sum_beta = sum_beta + beta_there
-                            sum_gradx = sum_gradx + gradx_there
-                            sum_gradx2 = sum_gradx2 + gradx_there**2
-                            sum_grady = sum_grady + grady_there
-                            sum_grady2 = sum_grady2 + grady_there**2
-                            sum_terht = sum_terht + ter_there
-                            sum_terht2 = sum_terht2 + ter_there**2
+                            !sum_fz2 = sum_fz2 + fz_there**2
+                            !sum_fz  = sum_fz + fz_there
+                            !sum_alpha2 = sum_alpha2 + alpha_there**2
+                            !sum_alpha  = sum_alpha + alpha_there
+                            !sum_beta2 = sum_beta2 + beta_there**2
+                            !sum_beta = sum_beta + beta_there
+                            !sum_gradx = sum_gradx + gradx_there
+                            !sum_gradx2 = sum_gradx2 + gradx_there**2
+                            !sum_grady = sum_grady + grady_there
+                            !sum_grady2 = sum_grady2 + grady_there**2
+                            !sum_terht = sum_terht + ter_there
+                            !sum_terht2 = sum_terht2 + ter_there**2
+                            isum_fz2 = isum_fz2 + ifz_there**2
+                            isum_fz  = isum_fz + ifz_there
+                            isum_alpha2 = isum_alpha2 + ialpha_there**2
+                            isum_alpha  = isum_alpha + ialpha_there
+                            isum_beta2 = isum_beta2 + ibeta_there**2
+                            isum_beta = isum_beta + ibeta_there
+                            isum_gradx = isum_gradx + igradx_there
+                            isum_gradx2 = isum_gradx2 + igradx_there**2
+                            isum_grady = isum_grady + igrady_there
+                            isum_grady2 = isum_grady2 + igrady_there**2
+                            isum_terht = isum_terht + iter_there
+                            isum_terht2 = isum_terht2 + iter_there**2
                             nsamps  = nsamps  + 1
                         ENDIF
                     END DO
@@ -222,37 +283,68 @@ DO imonth = 1,12
 
                 ! --- now calculate std deviation by shortcut (Wilks 2006, eq. 3.20)
 
-                alphahat_mean(ixa,jya) = sum_alpha / REAL(nsamps)
-                alphahat_stddev(ixa,jya) = SQRT((sum_alpha2-REAL(nsamps)*alphahat_mean(ixa,jya)**2) / &
-                    REAL(nsamps-1))
-                betahat_mean(ixa,jya) = sum_beta / REAL(nsamps)
-                betahat_stddev(ixa,jya) = SQRT((sum_beta2-REAL(nsamps)*betahat_mean(ixa,jya)**2) / &
-                    REAL(nsamps-1))
-                fz_mean(ixa,jya) = sum_fz / REAL(nsamps)
-                fz_stddev(ixa,jya) = SQRT((sum_fz2-REAL(nsamps)*fz_mean(ixa,jya)**2) / &
-                    REAL(nsamps-1))
-                gradx_mean(ixa,jya) = sum_gradx / REAL(nsamps)
-                gradx_stddev(ixa,jya) = SQRT((sum_gradx2-REAL(nsamps)*gradx_mean(ixa,jya)**2) / &
-                    REAL(nsamps-1))
-                grady_mean(ixa,jya) = sum_grady / REAL(nsamps)
-                grady_stddev(ixa,jya) = SQRT((sum_grady2-REAL(nsamps)*grady_mean(ixa,jya)**2) / &
-                    REAL(nsamps-1))
-                ter_mean(ixa,jya) = sum_terht  / REAL(nsamps)
-                ter_stddev(ixa,jya) = SQRT((sum_terht2-REAL(nsamps)*ter_mean(ixa,jya)**2) / &
-                    REAL(nsamps-1))
+                !alphahat_mean(ixa,jya) = sum_alpha / REAL(nsamps)
+                !alphahat_stddev(ixa,jya) = SQRT((sum_alpha2-REAL(nsamps)*alphahat_mean(ixa,jya)**2) / &
+                !    REAL(nsamps-1))
+                !betahat_mean(ixa,jya) = sum_beta / REAL(nsamps)
+                !betahat_stddev(ixa,jya) = SQRT((sum_beta2-REAL(nsamps)*betahat_mean(ixa,jya)**2) / &
+                !    REAL(nsamps-1))
+                !fz_mean(ixa,jya) = sum_fz / REAL(nsamps)
+                !fz_stddev(ixa,jya) = SQRT((sum_fz2-REAL(nsamps)*fz_mean(ixa,jya)**2) / &
+                !    REAL(nsamps-1))
+                !gradx_mean(ixa,jya) = sum_gradx / REAL(nsamps)
+                !gradx_stddev(ixa,jya) = SQRT((sum_gradx2-REAL(nsamps)*gradx_mean(ixa,jya)**2) / &
+                !    REAL(nsamps-1))
+                !grady_mean(ixa,jya) = sum_grady / REAL(nsamps)
+                !grady_stddev(ixa,jya) = SQRT((sum_grady2-REAL(nsamps)*grady_mean(ixa,jya)**2) / &
+                !    REAL(nsamps-1))
+                !ter_mean(ixa,jya) = sum_terht  / REAL(nsamps)
+                !ter_stddev(ixa,jya) = SQRT((sum_terht2-REAL(nsamps)*ter_mean(ixa,jya)**2) / &
+                !    REAL(nsamps-1))
+                    
+                ialphahat_mean(ixa,jya) = isum_alpha / nsamps
+                ialphahat_stddev(ixa,jya) = INT(SQRT((isum_alpha2-REAL(nsamps)*ialphahat_mean(ixa,jya)**2) / &
+                    REAL(nsamps-1)))
+                ibetahat_mean(ixa,jya) = isum_beta / nsamps
+                ibetahat_stddev(ixa,jya) = INT(SQRT((isum_beta2-REAL(nsamps)*ibetahat_mean(ixa,jya)**2) / &
+                    REAL(nsamps-1)))
+                ifz_mean(ixa,jya) = isum_fz / nsamps
+                ifz_stddev(ixa,jya) = INT(SQRT((isum_fz2-REAL(nsamps)*ifz_mean(ixa,jya)**2) / &
+                    REAL(nsamps-1)))
+                igradx_mean(ixa,jya) = isum_gradx / nsamps
+                igradx_stddev(ixa,jya) = INT(SQRT((isum_gradx2-REAL(nsamps)*igradx_mean(ixa,jya)**2) / &
+                    REAL(nsamps-1)))
+                igrady_mean(ixa,jya) = isum_grady / nsamps
+                igrady_stddev(ixa,jya) = INT(SQRT((isum_grady2-REAL(nsamps)*igrady_mean(ixa,jya)**2) / &
+                    REAL(nsamps-1)))
+                iter_mean(ixa,jya) = isum_terht  / nsamps
+                iter_stddev(ixa,jya) = INT(SQRT((isum_terht2-REAL(nsamps)*iter_mean(ixa,jya)**2) / &
+                    REAL(nsamps-1)))
             ELSE
-                alphahat_mean(ixa,jya) = -99.99
-                alphahat_stddev(ixa,jya) = -99.99
-                betahat_mean(ixa,jya) = -99.99
-                betahat_stddev(ixa,jya) = -99.99
-                fz_mean(ixa,jya) = -99.99
-                fz_stddev(ixa,jya) = -99.99
-                gradx_mean(ixa,jya) = -99.99
-                gradx_stddev(ixa,jya) = -99.99
-                grady_mean(ixa,jya) = -99.99
-                grady_stddev(ixa,jya) = -99.99
-                ter_mean(ixa,jya) = -99.99
-                ter_stddev(ixa,jya) = -99.99
+                !alphahat_mean(ixa,jya) = -99.99
+                !alphahat_stddev(ixa,jya) = -99.99
+                !betahat_mean(ixa,jya) = -99.99
+                !betahat_stddev(ixa,jya) = -99.99
+                !fz_mean(ixa,jya) = -99.99
+                !fz_stddev(ixa,jya) = -99.99
+                !gradx_mean(ixa,jya) = -99.99
+                !gradx_stddev(ixa,jya) = -99.99
+                !grady_mean(ixa,jya) = -99.99
+                !grady_stddev(ixa,jya) = -99.99
+                !ter_mean(ixa,jya) = -99.99
+                !ter_stddev(ixa,jya) = -99.99
+                ialphahat_mean(ixa,jya) = -99
+                ialphahat_stddev(ixa,jya) = -99
+                ibetahat_mean(ixa,jya) = -99
+                ibetahat_stddev(ixa,jya) = -99
+                ifz_mean(ixa,jya) = -99
+                ifz_stddev(ixa,jya) = -99
+                igradx_mean(ixa,jya) = -99
+                igradx_stddev(ixa,jya) = -99
+                igrady_mean(ixa,jya) = -99
+                igrady_stddev(ixa,jya) = -99
+                iter_mean(ixa,jya) = -99
+                iter_stddev(ixa,jya) = -99
             ENDIF
 
         END DO ! jya
@@ -267,12 +359,12 @@ DO imonth = 1,12
     !    200 FORMAT (i3,1x,f8.2,8(1x,f7.3),2(1x,f11.1))
     !END DO
 
-    stdmax = MAXVAL(ter_stddev)
-    stdmax_sqrt = stdmax**0.5
-    gradxmax = MAXVAL(gradx_stddev)
-    gradxmax_sqrt = SQRT(gradxmax)
-    gradymax = MAXVAL(grady_stddev)
-    gradymax_sqrt = SQRT(gradymax)
+    istdmax = MAXVAL(iter_stddev)
+    istdmax_sqrt = INT(REAL(istdmax)**0.5)
+    igradxmax = MAXVAL(igradx_stddev)
+    igradxmax_sqrt = INT(SQRT(REAL(igradxmax)))
+    igradymax = MAXVAL(igrady_stddev)
+    igradymax_sqrt = INT(SQRT(REAL(igradymax)))
     
     ! =======================================================================================
     ! ---- find locations of supplemental locations that are the best fit for each grid point
@@ -291,22 +383,21 @@ DO imonth = 1,12
             
         DO jya = 1, nya
 
-            ! ---- FROM ERIC...Initializing all of these (2145x1597) arrays at EVERY gridpoint
-	    !      iteration could definitely be hurting.  Adding OpenMP here.
-!$OMP PARALLEL DO DEFAULT(SHARED) COLLAPSE(2) PRIVATE(jj,ii)
-	    do jj=1,nya
-	       do ii=1,nxa
-                  maskout(ii,jj) = 0
-                  difference_alpha(ii,jj) = 99999999. 
-                  difference_beta(ii,jj) = 99999999.
-                  difference_fz(ii,jj) = 99999999.
-                  difference_terht(ii,jj) = 99999999.
-                  difference_gradx(ii,jj) = 99999999.
-                  difference_grady(ii,jj) = 99999999.
-                  difference_dist(ii,jj) = 99999999.
-	       end do ! ii=1,nxa
-	    end do ! jj=1,nya
-!$OMP END PARALLEL DO
+            maskout(:,:) = 0
+            !difference_alpha(:,:) = 99999999. 
+            !difference_beta(:,:) = 99999999.
+            !difference_fz(:,:) = 99999999.
+            !difference_terht(:,:) = 99999999.
+            !difference_gradx(:,:) = 99999999.
+            !difference_grady(:,:) = 99999999.
+            !difference_dist(:,:) = 99999999.
+            idifference_alpha(:,:) = 99999999 
+            idifference_beta(:,:) = 99999999
+            idifference_fz(:,:) = 99999999
+            idifference_terht(:,:) = 99999999
+            idifference_gradx(:,:) = 99999999
+            idifference_grady(:,:) = 99999999
+            idifference_dist(:,:) = 99999999
 
             IF (conusmask(ixa,jya) .gt. 0) THEN ! grid point inside area with CCPA data
 
@@ -316,19 +407,23 @@ DO imonth = 1,12
                 jmin = max(1,jya-maxseparation)
                 jmax = min(nya,jya+maxseparation)
                 
-                fz_here = fraction_zero(ixa,jya)
-                alpha_here = alphahat(ixa,jya)
-                beta_here = betahat(ixa,jya)
-                gradx_here = terrain_gradx(ixa,jya)
-                grady_here = terrain_grady(ixa,jya)
-                ter_here = terrain(ixa,jya)
+                !fz_here = fraction_zero(ixa,jya)
+                !alpha_here = alphahat(ixa,jya)
+                !beta_here = betahat(ixa,jya)
+                !gradx_here = terrain_gradx(ixa,jya)
+                !grady_here = terrain_grady(ixa,jya)
+                !ter_here = terrain(ixa,jya)
+                ifz_here = INT(fraction_zero(ixa,jya)*10000)
+                ialpha_here = INT(alphahat(ixa,jya)
+                ibeta_here = INT(betahat(ixa,jya)
+                igradx_here = terrain_gradx(ixa,jya)
+                igrady_here = terrain_grady(ixa,jya)
+                iter_here = terrain(ixa,jya)
 
                 terht_coeff2 = terht_coeff * SQRT(ter_stddev(ixa,jya)) / stdmax_sqrt
                 gradx_coeff2 = gradx_coeff * SQRT(gradx_stddev(ixa,jya)) / gradxmax_sqrt
                 grady_coeff2 = grady_coeff * SQRT(grady_stddev(ixa,jya)) / gradymax_sqrt
 
-!$OMP PARALLEL DO DEFAULT(SHARED) COLLAPSE(2) PRIVATE(ix2,jy2,dist,fz_there,alpha_there,beta_there,gradx_there) &
-!$OMP PRIVATE(grady_there,ter_there,fz_diff,alpha_diff,beta_diff,gradx_diff,grady_diff,terr_diff) &
                 DO ix2 = imin, imax
                     DO jy2 = jmin, jmax
 
@@ -390,7 +485,6 @@ DO imonth = 1,12
                         ENDIF
                     END DO ! jy2
                 END DO ! ix2
-!$OMP END PARALLEL DO
 
                 DO isupp = 1, nsupplemental  ! number of supplemental locations
 
@@ -482,7 +576,7 @@ imin_m = MAX(1,minx-minseparation)
 imax_m = MIN(nx,minx+minseparation)
 jmin_m = MAX(1,miny-minseparation)
 jmax_m = MIN(ny,miny+minseparation)
-!$OMP PARALLEL DO DEFAULT(SHARED) COLLAPSE(2) PRIVATE(i,j,dist2,dist)
+!$OMP END PARALLEL DO
 DO i = imin_m, imax_m
    DO j = jmin_m, jmax_m
       dist2 = REAL((minx-i)**2 + (miny-j)**2)

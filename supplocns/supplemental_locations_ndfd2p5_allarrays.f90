@@ -14,14 +14,14 @@ PROGRAM supplemental_locations_ndfd2p5
 USE netcdf
 
 PARAMETER (nyears = 15) ! 2002-2016 here for the CCPA data
-PARAMETER (nxa = 2145) ! NDFD 2.5 km grid x dimensions for expanded grid.
+PARAMETER (nxa = 2345) ! NDFD 2.5 km grid x dimensions for expanded grid.
 PARAMETER (nya = 1597) ! NDFD 2.5 km grid y dimensions for expanded grid
 PARAMETER (nmonths = 12) ! # months of the year
 PARAMETER (nsupplemental = 50) ! max number of CCPA grid supplemental locations  
     ! to be stored for a given forecast grid box ! prev 20
-PARAMETER (minseparation = 25) ! user-defined minimum separation between 
+PARAMETER (minseparation = 6) ! user-defined minimum separation between 
     ! analysis grid locations and supp location (in km)
-PARAMETER (maxseparation = 1000) ! user-defined maximum separation between  
+PARAMETER (maxseparation = 250) ! user-defined maximum separation between  
     ! analysis gridlocation and supplemental location (in grid pts)
 
 PARAMETER (alpha_coeff = 0.15) ! coefficient to apply to Gamma dist alpha parameter
@@ -70,6 +70,13 @@ REAL, DIMENSION(nxa,nya) :: lonsa ! analysis grid longitudes (negative is W lon)
 REAL, DIMENSION(nxa,nya) :: latsa ! analysis grid latitudes in degrees
 REAL, DIMENSION(nxa,nya,nsupplemental) :: penalty  ! penalty function 
     ! associated with the supp location
+REAL, DIMENSION(nxa,nya,nsupplemental) :: penalty_alpha ! archived penalty for Gamma's alpha parameter
+REAL, DIMENSION(nxa,nya,nsupplemental) :: penalty_beta ! penalty for Gamma's beta parameter
+REAL, DIMENSION(nxa,nya,nsupplemental) :: penalty_fz ! penalty for fraction zero
+REAL, DIMENSION(nxa,nya,nsupplemental) :: penalty_terht  ! penalty for terrain ht difference
+REAL, DIMENSION(nxa,nya,nsupplemental) :: penalty_gradx  ! penalty for facet differences
+REAL, DIMENSION(nxa,nya,nsupplemental) :: penalty_grady  ! penalty for facet differences
+REAL, DIMENSION(nxa,nya,nsupplemental) :: penalty_dist  ! penalty for distance differences
 REAL, DIMENSION(nxa,nya) :: terrain ! terrain elevation
 REAL, DIMENSION(nxa,nya) :: terrain_gradx ! terrain E-W gradient
 REAL, DIMENSION(nxa,nya) :: terrain_grady ! terrain N-S gradient
@@ -124,15 +131,11 @@ penalty_dist = 0.
 ! ---- read in terrain facet information for smoothing 
 !      at short, intermediate, and larger scales
 
-infile = TRIM(data_directory) // 'blend.precip_const.2p5.nc'
-PRINT *,'calling read_terrain_heights_2p5'
-PRINT *,TRIM(infile)
-CALL read_terrain_heights_2p5(nxa, nya, infile, terrain, &
-    lonsa, latsa, conusmask)
+infile = TRIM(data_directory) // 'NDFD_2p5grid.nc'
+CALL read_terrain_heights_2p5(nxa, nya, infile, terrain, lonsa, latsa)
 
 ! ---- calculate terrain gradients
 
-PRINT *, 'calling calculate_terrain_gradients'
 CALL calculate_terrain_gradients(nxa, nya, earth_radius_meters, &
     terrain, latsa, terrain_gradx, terrain_grady)
      
@@ -144,14 +147,12 @@ DO imonth = 1,12
     ! ---- read in the parameters of the Gamma distribution for 
     !      climatology, and fraction zero.
 
-    infile = TRIM(data_directory) // &
-        'climatology_gamma_parameters_ndfd2p5_' // &
-        cleadb // '_to_' // cleade // '_' // &
-        cmonths(imonth) //'.nc'
-    PRINT *, TRIM(infile)
-    CALL read_climatology_parameters_ndfd2p5(nxa, nya, infile, &
-        fraction_zero, alphahat, betahat)  
-             
+    infile = TRIM(data_directory) // 'climatology_gamma_parameters_ndfd2p5_' // &
+        cleadb // '_to_' // cleade // '_' // cmonths(imonth) //'.nc'
+    print *, TRIM(infile)
+    CALL read_climatology_parameters(nxa, nya, infile, fraction_zero, &
+        alphahat, betahat, conusmask)  
+        
     ! ---- loop thru grid points and precompute statistics for mean, std dev
     !      of alpha, beta, fraction zero, and terrain.  These will be used to
     !      scale the various pieces of information used to calculate 
@@ -160,10 +161,9 @@ DO imonth = 1,12
     PRINT *,'pre-processing to determine local standard devs of CDF ',&
         '& terrain parameters'
     DO ixa = 1, nxa
-        IF (MOD(ixa,100) .eq. 0) PRINT *,'processing  ixa = ',ixa,' of ',nxa
+        IF (MOD(ixa,10) .eq. 0) PRINT *,'processing  ixa = ',ixa,' of ',nxa
 
-        ! --- only bother searching in a box +/- 10 grid points to 
-        !     limit computations.
+        ! --- only bother searching in a box +/- 10 grid points to limit computations.
 
         ixmin = MAX(1,ixa-10)
         ixmax = MIN(nxa,ixa+10)
@@ -291,22 +291,14 @@ DO imonth = 1,12
             
         DO jya = 1, nya
 
-            ! ---- FROM ERIC...Initializing all of these (2145x1597) arrays at EVERY gridpoint
-	    !      iteration could definitely be hurting.  Adding OpenMP here.
-!$OMP PARALLEL DO DEFAULT(SHARED) COLLAPSE(2) PRIVATE(jj,ii)
-	    do jj=1,nya
-	       do ii=1,nxa
-                  maskout(ii,jj) = 0
-                  difference_alpha(ii,jj) = 99999999. 
-                  difference_beta(ii,jj) = 99999999.
-                  difference_fz(ii,jj) = 99999999.
-                  difference_terht(ii,jj) = 99999999.
-                  difference_gradx(ii,jj) = 99999999.
-                  difference_grady(ii,jj) = 99999999.
-                  difference_dist(ii,jj) = 99999999.
-	       end do ! ii=1,nxa
-	    end do ! jj=1,nya
-!$OMP END PARALLEL DO
+            maskout(:,:) = 0
+            difference_alpha(:,:) = 99999999. 
+            difference_beta(:,:) = 99999999.
+            difference_fz(:,:) = 99999999.
+            difference_terht(:,:) = 99999999.
+            difference_gradx(:,:) = 99999999.
+            difference_grady(:,:) = 99999999.
+            difference_dist(:,:) = 99999999.
 
             IF (conusmask(ixa,jya) .gt. 0) THEN ! grid point inside area with CCPA data
 
@@ -327,8 +319,6 @@ DO imonth = 1,12
                 gradx_coeff2 = gradx_coeff * SQRT(gradx_stddev(ixa,jya)) / gradxmax_sqrt
                 grady_coeff2 = grady_coeff * SQRT(grady_stddev(ixa,jya)) / gradymax_sqrt
 
-!$OMP PARALLEL DO DEFAULT(SHARED) COLLAPSE(2) PRIVATE(ix2,jy2,dist,fz_there,alpha_there,beta_there,gradx_there) &
-!$OMP PRIVATE(grady_there,ter_there,fz_diff,alpha_diff,beta_diff,gradx_diff,grady_diff,terr_diff) &
                 DO ix2 = imin, imax
                     DO jy2 = jmin, jmax
 
@@ -342,7 +332,7 @@ DO imonth = 1,12
                             latsa(ix2,jy2), lonsa(ix2,jy2), dist)
 
                         IF (conusmask(ix2,jy2) .gt. 0 .and. maskout(ix2,jy2) &
-                        .eq. 0 .and. dist .le. maxseparation) THEN
+                            .eq. 0 .and. dist .le. maxseparation*10 ) THEN
                             
                             fz_there = fraction_zero(ix2,jy2)
                             alpha_there = alphahat(ix2,jy2)
@@ -390,7 +380,6 @@ DO imonth = 1,12
                         ENDIF
                     END DO ! jy2
                 END DO ! ix2
-!$OMP END PARALLEL DO
 
                 DO isupp = 1, nsupplemental  ! number of supplemental locations
 
@@ -424,14 +413,27 @@ DO imonth = 1,12
                         minx = -99
                         miny = -99
                         diffmin = 999999.
+                        diffmin_alpha = 999999.
+                        diffmin_beta = 999999.
+                        diffmin_fz = 999999.
+                        diffmin_terht = 999999.
+                        diffmin_gradx = 999999.
+                        diffmin_grady = 999999.
+                        diffmin_dist = 999999.
                         
-
                         DO ix2 = imin, imax   !1, nxa
                             DO jy2 = jmin, jmax  !1, nya
 
                                 IF (difference(ix2,jy2) .lt. diffmin .and. &
                                 maskout(ix2,jy2) .eq. 0 .and. &
                                 conusmask(ix2,jy2) .gt. 0) THEN
+                                    diffmin_alpha = difference_alpha(ix2,jy2)
+                                    diffmin_beta = difference_beta(ix2,jy2)
+                                    diffmin_fz = difference_fz(ix2,jy2)
+                                    diffmin_terht = difference_terht(ix2,jy2)
+                                    diffmin_gradx = difference_gradx(ix2,jy2)
+                                    diffmin_grady = difference_grady(ix2,jy2)
+                                    diffmin_dist = difference_dist(ix2,jy2)
                                     diffmin = difference(ix2,jy2)
                                     minx = ix2
                                     miny = jy2
@@ -455,6 +457,15 @@ DO imonth = 1,12
 
                     ENDIF ! isupp > 1
 
+                    penalty(ixa,jya,isupp) = diffmin
+                    penalty_alpha(ixa,jya,isupp) = diffmin_alpha
+                    penalty_beta(ixa,jya,isupp) = diffmin_beta
+                    penalty_fz(ixa,jya,isupp) = diffmin_fz
+                    penalty_terht(ixa,jya,isupp) = diffmin_terht
+                    penalty_gradx(ixa,jya,isupp) = diffmin_gradx
+                    penalty_grady(ixa,jya,isupp) = diffmin_grady
+                    penalty_dist(ixa,jya,isupp) = diffmin_dist
+
                 END DO ! isupp
             ENDIF   ! conusmask
         END DO  ! jya
@@ -465,7 +476,9 @@ DO imonth = 1,12
     outfile = TRIM(data_directory) // 'supplemental_locations_CONUS_ndfd2p5_'//&
         cleadb //'_to_'//cleade//'_'//cmonths(imonth) // '.nc'
     CALL write_supp_locns_to_netcdf(outfile, nxa, nya, nsupplemental, &
-        xlocation_supp, ylocation_supp, conusmask, lonsa, latsa)
+        xlocation_supp, ylocation_supp, conusmask, lonsa, latsa, &
+        penalty, penalty_alpha, penalty_beta, penalty_fz, penalty_terht, &
+        penalty_gradx, penalty_grady, penalty_dist)
 
 END DO  ! imonth
 PRINT *,'Done'
@@ -482,7 +495,6 @@ imin_m = MAX(1,minx-minseparation)
 imax_m = MIN(nx,minx+minseparation)
 jmin_m = MAX(1,miny-minseparation)
 jmax_m = MIN(ny,miny+minseparation)
-!$OMP PARALLEL DO DEFAULT(SHARED) COLLAPSE(2) PRIVATE(i,j,dist2,dist)
 DO i = imin_m, imax_m
    DO j = jmin_m, jmax_m
       dist2 = REAL((minx-i)**2 + (miny-j)**2)
@@ -490,7 +502,6 @@ DO i = imin_m, imax_m
       IF (dist .le. minseparation) maskout(i,j) = 1
    END DO
 END DO
-!$OMP END PARALLEL DO
 RETURN
 END SUBROUTINE mask_around_thisgridpt
 
@@ -525,7 +536,9 @@ END SUBROUTINE to_radian
 ! ======================================================================
 
 SUBROUTINE write_supp_locns_to_netcdf(outfile, nxa, nya, nsupplemental, &
-    xlocation_supp, ylocation_supp, conusmask, lonsa, latsa)
+    xlocation_supp, ylocation_supp, conusmask, lonsa, latsa, &
+    penalty, penalty_alpha, penalty_beta, penalty_fz, penalty_terht, &
+    penalty_gradx, penalty_grady, penalty_dist)
 
 USE netcdf  ! use Unidata netCDF fortran interface library
 
@@ -535,6 +548,9 @@ INTEGER, INTENT(IN), DIMENSION(nxa, nya, nsupplemental) :: &
     xlocation_supp, ylocation_supp
 INTEGER*2, DIMENSION(nxa,nya), INTENT(IN) :: conusmask
 REAL, DIMENSION(nxa,nya), INTENT(IN) :: lonsa, latsa
+REAL, DIMENSION(nxa, nya, nsupplemental), INTENT(IN) :: &
+    penalty, penalty_alpha, penalty_beta, penalty_fz,  &
+    penalty_terht, penalty_gradx, penalty_grady, penalty_dist
 INTEGER :: dimid_3d(3), dimid_2d(2)
 
 print *,'writing to ',TRIM(outfile)
@@ -562,6 +578,22 @@ CALL check( nf90_def_var(ncid, "xlocation_supp", &
     NF90_INT, dimid_3d, nxsupp_varid) )
 CALL check( nf90_def_var(ncid, "ylocation_supp", &
     NF90_INT, dimid_3d, nysupp_varid) )  
+CALL check( nf90_def_var(ncid, "penalty", &
+    NF90_FLOAT, dimid_3d, npenalty_varid) ) 
+CALL check( nf90_def_var(ncid, "penalty_alpha", &
+    NF90_FLOAT, dimid_3d, npenalty_alpha_varid) ) 
+CALL check( nf90_def_var(ncid, "penalty_beta", &
+    NF90_FLOAT, dimid_3d, npenalty_beta_varid) ) 
+CALL check( nf90_def_var(ncid, "penalty_fz", &
+    NF90_FLOAT, dimid_3d, npenalty_fz_varid) ) 
+CALL check( nf90_def_var(ncid, "penalty_terht", &
+    NF90_FLOAT, dimid_3d, npenalty_terht_varid) ) 
+CALL check( nf90_def_var(ncid, "penalty_gradx", &
+    NF90_FLOAT, dimid_3d, npenalty_gradx_varid) ) 
+CALL check( nf90_def_var(ncid, "penalty_grady", &
+    NF90_FLOAT, dimid_3d, npenalty_grady_varid) ) 
+CALL check( nf90_def_var(ncid, "penalty_dist", &
+    NF90_FLOAT, dimid_3d, npenalty_dist_varid) ) 
 CALL check( nf90_enddef(ncid) )
 
 ! ---- write the data.
@@ -573,6 +605,16 @@ CALL check( nf90_put_var(ncid, nlats_varid, latsa))
 print *,'writing supplemental location data'
 CALL check( nf90_put_var(ncid, nxsupp_varid, xlocation_supp))
 CALL check( nf90_put_var(ncid, nysupp_varid, ylocation_supp))
+print *,'writing penalty data'
+CALL check( nf90_put_var(ncid, npenalty_varid, penalty))
+CALL check( nf90_put_var(ncid, npenalty_alpha_varid, penalty_alpha))
+CALL check( nf90_put_var(ncid, npenalty_beta_varid, penalty_beta))
+CALL check( nf90_put_var(ncid, npenalty_fz_varid, penalty_fz))
+PRINT *,'writing more penalty data'
+CALL check( nf90_put_var(ncid, npenalty_terht_varid, penalty_terht))
+CALL check( nf90_put_var(ncid, npenalty_gradx_varid, penalty_gradx))
+CALL check( nf90_put_var(ncid, npenalty_grady_varid, penalty_grady))
+CALL check( nf90_put_var(ncid, npenalty_dist_varid, penalty_dist))
 
 ! ---- Close the file. This frees up any internal netCDF resources
 !      associated with the file, and flushes any buffers.
