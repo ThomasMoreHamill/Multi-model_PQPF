@@ -2,11 +2,17 @@ import pygrib
 from dateutils import daterange, dateshift, dayofyear, splitdate
 import os, sys
 
-# --- set up dictionary associating center with center_wmo_code
+# ---- I note (sadly) that for this project, to save space the grib inputs and outputs
+#      were deleted.
+
+# --- set up dictionary associating center_wmo_code with the more common name of 
+#     the prediction center
+
 dict_center = {"babj":"CMA", "cwao":"CMC", "ecmf":"ECMWF", "rjtd":"JMA", 
                "egrr":"UKMO", "kwbc":"NCEP" , "rksl":"KMA", "sbsj":"CPTEC"}
 
-infile = sys.argv[1]
+
+infile = sys.argv[1] # the name of the grib file with lots of records in it
 fverif = pygrib.open(infile)
 fverif.seek(0)
 for grb in fverif:
@@ -19,7 +25,7 @@ for grb in fverif:
       msg = grb.tostring()
       center = dict_center[grb.centre]
       outfilename = '/Users/thamill/precip/ecmwf_data/'+\
-          center+'_'+cdataDate+'_fhour'+cendStep+'_pertno'+cpertno+'.grb'
+          center+'/'+center+'_'+cdataDate+'_fhour'+cendStep+'_pertno'+cpertno+'.grb'
       print outfilename
       grbout = open(outfilename,'ab')  # append, binary
       grbout.write(msg)
