@@ -1,5 +1,5 @@
 """ this script reads in grib forecast data and writes back out an equivalent
-    netCDF file. """
+    netCDF file, also interpolating the forecast to the output 1/8-degree grid """
 
 import numpy as np
 import sys
@@ -38,9 +38,7 @@ cleade = sys.argv[2] # use 24 for 24 h end time, not 024
 
 # ---- read in sample forecast in order to define the forecast lat/lon array
 
-data_directory = '/Users/thamill/precip/ecmwf_data/'
-#data_directory = '/Projects/Reforecast2/netcdf/NationalBlend/'
-infilename = data_directory + 'ECMWF_2016010100_fhour12_pertno1.grb'
+infilename = '/Users/thamill/precip/ecmwf_data/ECMWF_2016010100_fhour12_pertno1.grb'
 grib = pygrib.open(infilename)
 grb2 = grib.select()[0]
 latsf, lonsf = grb2.latlons()
@@ -66,7 +64,7 @@ else:
 
 # ---- read in sample conus mask, lat, lon
 
-infile = data_directory + 'conusmask_ccpa.nc'
+infile = '/Users/thamill/precip/conusmask_ccpa.nc'
 nc = Dataset(infile)
 conusmask_in = nc.variables['conusmask'][:,:]
 lons = nc.variables['lons'][:,:]
@@ -80,8 +78,7 @@ for idate, date in zip(range(ndates), date_list):
 
     # --- set up the output netCDF file information
     
-    outfile = data_directory +center+'_'+date+'_leadtime'+cleade+'h.nc'
-    
+    outfile = '/Users/thamill/precip/ecmwf_data/'+center+'_'+date+'_leadtime'+cleade+'h.nc'
     print outfile, timey.asctime()
     rootgrp = Dataset(outfile,'w',format='NETCDF4_CLASSIC')
     
@@ -172,7 +169,6 @@ for idate, date in zip(range(ndates), date_list):
  
         apcpf_out[:,:] = interp(fcst, lonsf_1d, latsf_1d, \
                 lons, lats, checkbounds=False, masked=False, order=1)
-        #print 'apcpf_out[nya/2,0:nxa:12] = ',apcpf_out[nya/2,0:nxa:12]
         
         # ---- write out this netcdf record.
         
