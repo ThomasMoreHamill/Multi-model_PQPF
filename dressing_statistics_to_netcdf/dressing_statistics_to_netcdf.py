@@ -2,10 +2,14 @@
     for best-member dressing for individual forecast systems.  These
     dressing parameters are saved to a netcdf file, and diagnostic plots 
     are generated: (2) generate closest-member histograms, make diagnostic
-    plots, and save to a netCDF file.
+    plots, and save to a netCDF file.  
+
+    There is now the option of using either empirical CDFs or fitted
+    Gamma CDFs as input information.   It is possible the dressing statistics
+    may be different depending on which type of CDF is used for the
+    quantile mapping.
 """
 
-from mpl_toolkits.basemap import Basemap
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,28 +24,24 @@ import scipy.signal as signal
 import scipy.stats as stats
 from scipy.stats import gamma
 from matplotlib.backends.backend_pdf import PdfPages
+
 rcParams['legend.fontsize']='medium'
 rcParams['legend.fancybox']=True
 rcParams['xtick.labelsize']='medium'
 
 # ---- DEFINITION OF FUNCTIONS
 
-def function_to_fit(data_vector, a, b, c):
-    # --- Having previously derived Gamma shape and scale
-    #     parameters for specific precipitation amounts,
-    #     we now seek a smooth parametric function for the 
-    #     gamma distribution parameters as f(precip amt).
-    #     This form was suggested by Michael Scheuerer, 
-    #     0 < a, 0 < b, 0 < c <=1.
-    return (a+b*data_vector[:])**c
-
 def compute_gamma_parameters (nzeros, npositive, \
     gamma_sum, gamma_ln_sum, weight):
     
     # --- gamma parameters estmation technique follows Wilks text.
     #     Statistical Methods in the Atmospheric Sciences (3rd ed.)
-    #     Here using eqs. 4.40 and 4.41 and 4.42, the Thom (1958)
-    #     estimatotr for the shape parameter.
+    #     Here adaptation using eqs. 4.40 and 4.41 and 4.42, 
+    #     the Thom (1958) estimator for the shape parameter.
+    #     As opposed to the routine compute_gamma_parameters_fclim
+    #     below, this routine is used for the parameter estimation
+    #     in the situation when the ensemble-mean forecast is 
+    #     nonzero.
 
     if weight >= 100.:
         rntot = nzeros + npositive
@@ -58,31 +58,22 @@ def compute_gamma_parameters (nzeros, npositive, \
         gamma_scale = -99.99
     return fraction_zero, gamma_shape, gamma_scale, xmean
 
-
 def compute_gamma_parameters_fclim (nzeros, npositive, \
     gamma_sum, gamma_ln_sum):
     
     # --- gamma parameters estmation technique follows Wilks text.
     #     Statistical Methods in the Atmospheric Sciences (3rd ed.)
     #     Here using eqs. 4.40 and 4.41 and 4.42, the Thom (1958)
-    #     estimatotr for the shape parameter.
+    #     estimatotr for the shape parameter.  Used in the situation
+    #     when the ensemble-mean forecast is zero.  
 
     rntot = nzeros + npositive
     fraction_zero = nzeros / rntot
-    xmean = gamma_sum / float(npositive)
-    print 'xmean, log = ',xmean,np.log(xmean)
-    print 'gamma_ln_sum, npositive, ratio = ', \
-        gamma_ln_sum, npositive, gamma_ln_sum / float(npositive)    
+    xmean = gamma_sum / float(npositive)  
     D = np.log(xmean) - (gamma_ln_sum / float(npositive))
     if D < 0.01 : D = 0.01
-    print 'D = ', D
-    #rnumer2 = 1. + 4.*D/3.
-    #gamma_shape = (1. + np.sqrt(rnumer2)) / (4.*D)
-    if D < 0.5772:
-        gamma_shape - (0.5000876 + 0.1648852*D - 0.0544274*D*D) / D
-    else:
-        gamma_shape = (8.898919 + 9.059950*D + 0.9775373*D*D) / \
-            (17.79728*D + 11.968477*D*D + D**3)
+    rnumer2 = 1. + 4.*D/3.
+    gamma_shape = (1. + np.sqrt(rnumer2)) / (4.*D)
     gamma_scale = xmean / gamma_shape
     
     return fraction_zero, gamma_shape, gamma_scale
@@ -91,16 +82,21 @@ def compute_gamma_parameters_fclim (nzeros, npositive, \
 
 cmodel = sys.argv[1] # NCEP, ECMWF, or CMC
 cleade = sys.argv[2] # ending of periods lead time in hours, e.g., '24', '108'
+ileade = int(cleade)
+date_forecast = sys.argv[3] # yyyymmddhh format, date of initial condition
+cempirical = sys.argv[4]  # 1 for empirical, 0 for gamma distributions in estimating precip CDFs
+date_end = dateshift(date_forecast,-ileade)
+date_begin = dateshift(date_end, -61*24)
 
 # I've hardcoded here to generate dates of interest to me.  You'd change
 # to flexibly input the dates spanning the previous 60 days.
 
 #date_begin = sys.argv[3]
 #date_end = sys.argv[4]
-date_begin = '2016040100'  # replace with command line input when
-date_end = '2016070100'    # used at MDL
+#date_begin = '2016040100'  # replace with command line input when
+#date_end = '2016070100'    # used at MDL
 
-date_list = daterange(date_begin, date_end, 24)
+date_list = daterange(date_begin, date_end, 24) # makes a character list of dates 
 ndates = len(date_list)
 
 # ======================================================================
@@ -108,24 +104,26 @@ ndates = len(date_list)
 #          all case days
 # ======================================================================
 
-# ---- read in the array dimensions, precip values where gamma 
-#      distribution parameters and fraction zero are calculated, and 
+# ---- from a sample file, read in the array dimensions, precip values where 
+#      gamma distribution parameters and fraction zero are calculated, and 
 #      precipitation thresholds that are boundaries for light, 
 #      medium, and heavy precipitation from netcdf file.  These
 #      were previously generated in tally_gamma_statsfull_weighted.f90,
 #      called by generate_gammadressing_stats_anymodel.f90
 
-#data_directory = '/Users/thamill/precip/ecmwf_data/'   
-data_directory = '/Projects/Reforecast2/netcdf/NationalBlend/'   
-infile = data_directory+'gamma_and_closest_hist_stats_' + \
-    cmodel + '_' + date_begin + '_fhour'+cleade+'.nc'
+data_directory = '/Users/thamill/precip/ecmwf_data/'   
+if cempirical == '1':
+    infile = data_directory+'gamma_and_closest_hist_stats_' + \
+        cmodel + '_2016040100_fhour'+cleade+'.nc'
+else:
+    infile = data_directory+'gamma_and_closest_hist_stats_' + \
+        cmodel + '_2016040100_fhour'+cleade+'_gammaqmap.nc'  
+    
 print infile
 nc = Dataset(infile)    
 gamma_threshes = nc.variables['gamma_threshes'][:]  
 closest_histogram = nc.variables['closest_histogram'][:]
 npv, nmembersx25 = np.shape(closest_histogram)
-print 'nmembersx25 = ', nmembersx25
-
 nthreshes = len(gamma_threshes)
 climo_pop_thresholds = nc.variables['climo_pop_thresholds'][:] 
 thresh_light = nc.variables['thresh_light'][0]
@@ -146,20 +144,30 @@ gamma_sum_total = np.zeros((3,3,nthreshes),dtype=np.float64)
 gamma_ln_sum_total = np.zeros((3,3,nthreshes),dtype=np.float64)
 nzeros_total = np.zeros((3,3,nthreshes),dtype=np.float64)
 npositive_total = np.zeros((3,3,nthreshes),dtype=np.float64)
-gamma_sum_ensmeanzero_fclim_total = np.zeros((n_climocats),dtype=np.float64)
-gamma_ln_sum_ensmeanzero_fclim_total = np.zeros((n_climocats),dtype=np.float64)
+nsamps_total = np.zeros((3,3,nthreshes),dtype=np.float64)
+gamma_sum_ensmeanzero_fclim_total = \
+    np.zeros((n_climocats),dtype=np.float64)
+gamma_ln_sum_ensmeanzero_fclim_total = \
+    np.zeros((n_climocats),dtype=np.float64)
 closest_histogram_total = np.zeros((3,nmembersx25),dtype=np.float32)
 nzeros_fclim_total = np.zeros((n_climocats),dtype=np.float64)
 npositive_fclim_total = np.zeros((n_climocats),dtype=np.float64)
-exceed_yes_fclimPOP_total = np.zeros((nout_thresh, n_climocats),dtype=np.float64)
-exceed_no_fclimPOP_total = np.zeros((nout_thresh, n_climocats),dtype=np.float64)
+nsamps_fclim_total = np.zeros((n_climocats),dtype=np.float64)
+exceed_yes_fclimPOP_total = np.zeros((nout_thresh, 
+    n_climocats),dtype=np.float64)
+exceed_no_fclimPOP_total = np.zeros((nout_thresh, \
+    n_climocats),dtype=np.float64)
 
 # ---- loop over dates, read in data, and add the latest day's data
 #      to the overall summation arrays
 
 for idate, date in zip(range(ndates), date_list):
-    infile = data_directory+'gamma_and_closest_hist_stats_' + cmodel + '_' + \
-            date + '_fhour'+cleade+'.nc'
+    if cempirical == '1':
+        infile = data_directory+'gamma_and_closest_hist_stats_' + \
+            cmodel + '_' + date + '_fhour'+cleade+'.nc'
+    else:
+        infile = data_directory+'gamma_and_closest_hist_stats_' + \
+            cmodel + '_' + date + '_fhour'+cleade+'_gammaqmap.nc'        
     print infile
     fexist  = os.path.exists(infile)
     if fexist:
@@ -183,24 +191,32 @@ for idate, date in zip(range(ndates), date_list):
             exceed_yes_fclimPOP = nc.variables['exceed_yes_fclimPOP'][:,:]
             exceed_no_fclimPOP = nc.variables['exceed_no_fclimPOP'][:,:]
             
-            # ---- add to sum
+            # ---- add to sum over many days
             
             gamma_sum_total = gamma_sum_total + gamma_sum
             gamma_ln_sum_total = gamma_ln_sum_total + gamma_ln_sum
             nzeros_total = nzeros_total + nzeros
             npositive_total = npositive_total + npositive
+            nsamps_total = nsamps_total + npositive + nzeros
             weights_gamma_total = weights_gamma_total + weights_gamma
             
-            closest_histogram_total = closest_histogram_total + closest_histogram
+            closest_histogram_total = closest_histogram_total + \
+                closest_histogram
             
-            gamma_sum_ensmeanzero_fclim_total = gamma_sum_ensmeanzero_fclim_total + \
+            gamma_sum_ensmeanzero_fclim_total = \
+                gamma_sum_ensmeanzero_fclim_total + \
                 gamma_sum_ensmeanzero_fclim
-            gamma_ln_sum_ensmeanzero_fclim_total = gamma_ln_sum_ensmeanzero_fclim_total + \
+            gamma_ln_sum_ensmeanzero_fclim_total = \
+                gamma_ln_sum_ensmeanzero_fclim_total + \
                 gamma_ln_sum_ensmeanzero_fclim
             nzeros_fclim_total = nzeros_fclim_total + nzeros_fclim
-            npositive_fclim_total = npositive_fclim_total + npositive_fclim  
-            exceed_yes_fclimPOP_total = exceed_yes_fclimPOP_total + exceed_yes_fclimPOP 
-            exceed_no_fclimPOP_total = exceed_no_fclimPOP_total + exceed_no_fclimPOP           
+            npositive_fclim_total = npositive_fclim_total + npositive_fclim 
+            nsamps_fclim_total = nsamps_fclim_total + \
+                nzeros_fclim + npositive_fclim
+            exceed_yes_fclimPOP_total = exceed_yes_fclimPOP_total + \
+                exceed_yes_fclimPOP 
+            exceed_no_fclimPOP_total = exceed_no_fclimPOP_total + \
+                exceed_no_fclimPOP           
                 
         except (IOError, ValueError, RuntimeError):
             print 'Error reading ', infile
@@ -280,8 +296,8 @@ for ipamount in range(3):
     
         # ---- Determine plotting bounds with good data
         
-        print 'fraction_zero[ilomidhi,ipamount,:] = ', \
-            fraction_zero[ilomidhi,ipamount,:]
+        #print 'fraction_zero[ilomidhi,ipamount,:] = ', \
+        #    fraction_zero[ilomidhi,ipamount,:]
         ithresh = 0
         while fraction_zero[ilomidhi,ipamount,ithresh] < 0. and ithresh < nthreshes-1:
             ithresh = ithresh+1
@@ -298,7 +314,7 @@ for ipamount in range(3):
         else:
             ihighest[ilomidhi,ipamount] = ithresh+1   #???? 
         
-        print 'ilowest, ihighest = ', ilowest[ilomidhi,ipamount],ihighest[ilomidhi,ipamount]
+        #print 'ilowest, ihighest = ', ilowest[ilomidhi,ipamount],ihighest[ilomidhi,ipamount]
 
 # --- in situations where the ensemble mean was near zero, practical experience
 #     has shown that the distribution of nonzero analyzed values depends on the climatology.
@@ -340,7 +356,271 @@ for i in range(3):
     closest_histogram_savgol[i,:] = csavgol[:] / np.sum(csavgol)
 
 # ======================================================================
-# ---- PART 3:  now make some diagnostic plots, save these to pdf file
+# ---- PART 3:  Save the gamma distribution 
+#               information to netcdf files
+# ======================================================================
+
+# ---- (3a) define netCDF file name for gamma distribution parameters and open
+#      the file
+if cempirical == '1':
+    outfile_nc = data_directory+cmodel+'/gamma_fraction_zero_dressing_'+\
+        cmodel+'_date='+date_forecast+'_lead='+cleade+'.nc'
+else:
+    outfile_nc = data_directory+cmodel+'/gamma_fraction_zero_dressing_'+\
+        cmodel+'_date='+date_forecast+'_lead='+cleade+'_gammaqmap.nc'
+print 'writing netCDF dressing statistics to ',outfile_nc
+rootgrp = Dataset(outfile_nc,'w',format='NETCDF4_CLASSIC')
+
+# ---- (3b) declare array dimensions, indices for arrays
+
+npv = len(gamma_threshes)
+npvals = rootgrp.createDimension('npvals',npv)
+npvals_indices = rootgrp.createVariable('npvals_indices','i4',('npvals',))
+npvals_indices.long_name = "index for gamma_threshes array, "+\
+    "the precip amounts where gamma distribution parameter information is stored"
+npvals_indices.units = "n/a"
+
+nclim = len(climo_pop_thresholds)
+nclim_vals = rootgrp.createDimension('nclim_vals',nclim)
+nclim_indices = rootgrp.createVariable('nclim_indices','i4',('nclim_vals',))
+nclim_indices.long_name = \
+    'index for climo_pop_thresholds, the climatological POP values that '+\
+    'define boundaries for arrays of fraction zero and gamma parameters '+\
+    'when forecast mean ~ = 0'
+nclim_indices.units = "n/a"
+
+nclim_p1 = nclim+1
+nclim_p1_vals = rootgrp.createDimension('nclim_p1_vals',nclim_p1)
+nclim_p1_indices = \
+    rootgrp.createVariable('nclim_p1_indices','i4',('nclim_p1_vals',))
+nclim_p1_indices.long_name = 'index into arrays gamma_shape_fclimpop, '+\
+    'gamma_scale_fclimpop, fraction_zeros_fclimpop'
+nclim_p1_indices.units = "n/a"
+
+nlo_int_hi = 3
+nlo_int_hi_vals = rootgrp.createDimension('nlo_int_hi_vals',nlo_int_hi)
+nlo_int_hi_indices = \
+    rootgrp.createVariable('nlo_int_hi_indices','i4',('nlo_int_hi_vals',))
+nlo_int_hi_indices.long_name = \
+    "indices of for lower/intermediate/highest sorted members"
+nlo_int_hi_indices.units = "n/a"
+
+npcats = 3 
+npcatvals = rootgrp.createDimension('npcatvals',npcats)
+npcat_indices = rootgrp.createVariable('npcat_indices','i4',('npcatvals',))
+npcat_indices.long_name = "indices for discretization of arrays by "+\
+    "ensemble-mean precipitation forecast amounts"
+npcat_indices.units = "n/a"
+
+# ---- (3c) initialize the arrays that will hold the data 
+
+precip_values = rootgrp.createVariable('precip_values','f4',('npvals',), \
+    zlib=True,least_significant_digit=3)
+precip_values.units = "mm"
+precip_values.long_name = \
+    "precipitation values where fraction zero, "+\
+    "Gamma shape, Gamma scale are estimated"
+precip_values.valid_range = [0.,500.]
+precip_values.missing_value = -99.99
+
+fraction_zeros = rootgrp.createVariable('fraction_zeros','f4',\
+    ('nlo_int_hi_vals','npcatvals','npvals',), \
+    zlib=True,least_significant_digit=4)
+fraction_zeros.units = "n/a"
+fraction_zeros.long_name = \
+    "Fraction of samples with analyzed precipitation = 0"
+fraction_zeros.valid_range = [0.,1.]
+fraction_zeros.missing_value = -99.99
+
+fraction_zeros_fclimpop = rootgrp.createVariable('fraction_zeros_fclimpop',\
+    'f4',('nclim_p1_vals',), zlib=True,least_significant_digit=4)
+fraction_zeros_fclimpop.units = "n/a"
+fraction_zeros_fclimpop.long_name = \
+    "Fraction of samples where analyzed precipitation = 0 "+\
+    "when mean forecast ~=0. (as function of climatological POP)"
+fraction_zeros_fclimpop.valid_range = [0.,1.]
+fraction_zeros_fclimpop.missing_value = -99.99
+
+climo_pop_thresholds = rootgrp.createVariable('climo_pop_thresholds',\
+    'f4',('nclim_vals',), zlib=True,least_significant_digit=4)
+climo_pop_thresholds.units = "n/a"
+climo_pop_thresholds.long_name = "Threshold of POP climatology for "+\
+    "defining fraction zero and gamma distribution "+\
+    "parameters when ens-mean forecast precip ~= 0"
+climo_pop_thresholds.valid_range = [0.,1.]
+climo_pop_thresholds.missing_value = -99.99
+
+gamma_shapes = rootgrp.createVariable('gamma_shapes','f4',\
+    ('nlo_int_hi_vals','npcatvals','npvals',), \
+    zlib=True,least_significant_digit=3)
+gamma_shapes.units = "n/a"
+gamma_shapes.long_name = "Gamma distribution shape parameter (alpha)"
+gamma_shapes.valid_range = [0.,1200.]
+gamma_shapes.missing_value = -99.99
+
+gamma_scales = rootgrp.createVariable('gamma_scales','f4',\
+    ('nlo_int_hi_vals','npcatvals','npvals',), \
+    zlib=True,least_significant_digit=3)
+gamma_scales.units = "n/a"
+gamma_scales.long_name =  "Gamma distribution scale parameter (beta)"
+gamma_scales.valid_range = [0.,1200.]
+gamma_scales.missing_value = -99.99
+
+nsamps = rootgrp.createVariable('nsamps','f4',('nlo_int_hi_vals',\
+    'npcatvals','npvals',), zlib=True,least_significant_digit=1)
+nsamps.units = "n/a"
+nsamps.long_name =  "Number of samples"
+nsamps.valid_range = [0.,10000000000.]
+nsamps.missing_value = -99.99
+
+gamma_shape_fclimpop = rootgrp.createVariable('gamma_shape_fclimpop',\
+    'f4',('nclim_p1_vals',), zlib=True,least_significant_digit=4)
+gamma_shape_fclimpop.units = "n/a"
+gamma_shape_fclimpop.long_name = \
+    "Gamma shape parameter for nonzero analyzed precipitation" + \
+    " where mean precip ~=0 as function of climatological POP"
+gamma_shape_fclimpop.valid_range = [0.,100.]
+gamma_shape_fclimpop.missing_value = -99.99
+
+gamma_scale_fclimpop = rootgrp.createVariable('gamma_scale_fclimpop',\
+    'f4',('nclim_p1_vals',), zlib=True,least_significant_digit=4)
+gamma_scale_fclimpop.units = "n/a"
+gamma_scale_fclimpop.long_name = \
+    "Gamma scale parameter for nonzero analyzed precipitation " + \
+    " where mean precip ~=0 as function of climatological POP"
+gamma_scale_fclimpop.valid_range = [0.,100.]
+gamma_scale_fclimpop.missing_value = -99.99
+
+nsamps_fclimpop = rootgrp.createVariable('nsamps_fclimpop','f4',\
+    ('nclim_p1_vals',), zlib=True,least_significant_digit=1)
+nsamps_fclimpop.units = "n/a"
+nsamps_fclimpop.long_name = \
+    "Number of samples as function of climatological POP"
+nsamps_fclimpop.valid_range = [0.,10000000000000.]
+nsamps_fclimpop.missing_value = -99.99
+
+precip_thresholds =  rootgrp.createVariable('precip_thresholds',\
+    'f4',('npcatvals',), zlib=True,least_significant_digit=4)
+precip_thresholds.units = "n/a"
+precip_thresholds.long_name = \
+    "Precipitation amounts that define borders "+\
+    "between no, light, mod, heavy precip"
+precip_thresholds.valid_range = [0.,100.]
+precip_thresholds.missing_value = -99.99
+
+# --- (3d) write calculated values for netcdf file indices and variables
+
+nclim_indices[:] = range(nclim)
+npvals_indices = range(npv)
+nclim_p1_indices = range(nclim_p1)
+nlo_int_hi_indices = range(nlo_int_hi) 
+npcat_indices = range(npcats)
+
+precip_values[:] = gamma_threshes[:]
+fraction_zeros[:,:,:] = fraction_zero[:,:,:]
+gamma_shapes[:,:,:] = gamma_shape[:,:,:]
+gamma_scales[:,:,:] = gamma_scale[:,:,:]
+nsamps[:,:,:] = nsamps_total[:,:,:]
+fraction_zeros_fclimpop[:] = fraction_zero_meanzero_fclim[:]
+gamma_shape_fclimpop[:] = gamma_shape_meanzero_fclim[:]
+gamma_scale_fclimpop[:] = gamma_scale_meanzero_fclim[:]
+nsamps_fclimpop[:] = nsamps_fclim_total[:]
+
+climo_pop_thresholds[:] = climo_pop_thresholds_save[:]
+precip_thresholds[:] = np.array([np.float(thresh_light), \
+    np.float(thresh_mod), np.float(thresh_high)])
+
+# ---- (3e) more metadata
+
+rootgrp.stream = "s4" # ????
+rootgrp.title = "Best-member dressing statistics for National Blend "+\
+    cmodel+" multi-model ensemble"
+rootgrp.Conventions = "CF-1.0"  # ????
+rootgrp.history = "Created ~ Sep 2017 by Tom Hamill, tom.hamill@noaa.gov"
+rootgrp.institution = "NOAA/ESRL/PSD"
+rootgrp.platform = "Model"
+rootgrp.references = "None"
+
+# ---- (3f) close the file
+
+rootgrp.close()
+
+
+# ======================================================================
+# ---- PART 4:  Save the closest-member histogram info to netcdf files
+# ======================================================================
+
+# ---- (4a) define netCDF file name for gamma distribution parameters and open
+#      the file
+
+if cempirical == '1':
+    outfile_nc = data_directory+cmodel+'/closest_histogram_'+\
+        cmodel+'_date='+date_forecast+'_lead='+cleade+'.nc'
+else:
+    outfile_nc = data_directory+cmodel+'/closest_histogram_'+\
+        cmodel+'_date='+date_forecast+'_lead='+cleade+'_gammaqmap.nc'
+        
+print 'writing netCDF closest histogram data to ',outfile_nc
+rootgrp = Dataset(outfile_nc,'w',format='NETCDF4_CLASSIC')
+
+# ---- (4b) declare array dimensions, indices for arrays
+
+npcats = 3 
+npcatvals = rootgrp.createDimension('npcatvals',npcats)
+npcat_indices = rootgrp.createVariable('npcat_indices','i4',('npcatvals',))
+npcat_indices.long_name = "indices for discretization of arrays by '+\
+    'ensemble-mean precipitation forecast amounts"
+npcat_indices.units = "n/a"
+
+nmembervals = rootgrp.createDimension('nmembervals',nmembersx25)
+nmember_indices = rootgrp.createVariable('nmember_indices','i4',('nmembervals',))
+nmember_indices.long_name = "sorted ensemble member number"
+nmember_indices.units = "n/a"
+
+# ---- (4c) declare arrays that will hold the dressing data
+
+precip_thresholds =  rootgrp.createVariable('precip_thresholds','f4',('npcatvals',), \
+    zlib=True,least_significant_digit=4)
+precip_thresholds.units = "n/a"
+precip_thresholds.long_name = \
+    "Precipitation amounts that define borders between no, light, mod, heavy precip"
+precip_thresholds.valid_range = [0.,100.]
+precip_thresholds.missing_value = -99.99
+
+closest_histogram = rootgrp.createVariable('closest_histogram','f4',('npcatvals','nmembervals',), \
+    zlib=True,least_significant_digit=6)
+closest_histogram.units = "n/a"
+closest_histogram.long_name = \
+    "histogram of how often this sorted member is the closet to analyzed value"
+closest_histogram.valid_range = [0.,1.]
+closest_histogram.missing_value = -99.99
+
+# --- (4d) write calculated values for netcdf file indices and variables
+
+npcat_indices = range(npcats)
+precip_thresholds[:] = np.array([np.float(thresh_light), np.float(thresh_mod), np.float(thresh_high)])
+nmember_indices[:] = range(nmembersx25)
+closest_histogram[:,:] = closest_histogram_savgol[:,:]
+
+# ---- (4e) more metadata
+
+rootgrp.stream = "s4" # ????
+rootgrp.title = "histograms of how often this sorted member is the closet to analyzed value for "+cmodel
+rootgrp.Conventions = "CF-1.0"  # ????
+rootgrp.history = "Created ~ Sep 2017 by Tom Hamill, tom.hamill@noaa.gov"
+rootgrp.institution = "NOAA/ESRL/PSD"
+rootgrp.platform = "Model"
+rootgrp.references = "None"
+
+# ---- (5f) close the file, and done
+
+rootgrp.close()
+
+sys.exit()
+
+
+# ======================================================================
+# ---- PART 5:  now make some diagnostic plots, save these to pdf file
 # ======================================================================
 
 #  first plot for the fraction zero, the gamma shape and scale for the empirical
@@ -680,226 +960,6 @@ with PdfPages(cmodel+'_'+cleade+'h_dressing_diagnostics.pdf') as pdf:
     plt.close()        
             
 print 'Plotting to '+cmodel+'_'+cleade+'h_dressing_diagnostics.pdf done.'
-
-# ======================================================================
-# ---- PART 4:  Save the gamma distribution 
-#               information to netcdf files
-# ======================================================================
-
-# ---- (4a) define netCDF file name for gamma distribution parameters and open
-#      the file
-
-outfile_nc = '/Users/thamill/precip/ecmwf_data/gamma_fraction_zero_dressing_'+\
-    cmodel+'_lead='+cleade+'.nc'
-print 'writing netCDF dressing statistics to ',outfile_nc
-rootgrp = Dataset(outfile_nc,'w',format='NETCDF4_CLASSIC')
-
-# ---- (4b) declare array dimensions, indices for arrays
-
-npv = len(gamma_threshes)
-npvals = rootgrp.createDimension('npvals',npv)
-npvals_indices = rootgrp.createVariable('npvals_indices','i4',('npvals',))
-npvals_indices.long_name = "index for gamma_threshes array, "+\
-    "the precip amounts where gamma distribution parameter information is stored"
-npvals_indices.units = "n/a"
-
-nclim = len(climo_pop_thresholds)
-nclim_vals = rootgrp.createDimension('nclim_vals',nclim)
-nclim_indices = rootgrp.createVariable('nclim_indices','i4',('nclim_vals',))
-nclim_indices.long_name = 'index for climo_pop_thresholds, the climatological POP values that '+\
-    'define boundaries for arrays of fraction zero and gamma parameters when forecast mean ~ = 0'
-nclim_indices.units = "n/a"
-
-nclim_p1 = nclim+1
-nclim_p1_vals = rootgrp.createDimension('nclim_p1_vals',nclim_p1)
-nclim_p1_indices = rootgrp.createVariable('nclim_p1_indices','i4',('nclim_p1_vals',))
-nclim_p1_indices.long_name = 'index into arrays gamma_shape_fclimpop, '+\
-    'gamma_scale_fclimpop, fraction_zeros_fclimpop'
-nclim_p1_indices.units = "n/a"
-
-nlo_int_hi = 3
-nlo_int_hi_vals = rootgrp.createDimension('nlo_int_hi_vals',nlo_int_hi)
-nlo_int_hi_indices = rootgrp.createVariable('nlo_int_hi_indices','i4',('nlo_int_hi_vals',))
-nlo_int_hi_indices.long_name = "indices of for lower/intermediate/highest sorted members"
-nlo_int_hi_indices.units = "n/a"
-
-npcats = 3 
-npcatvals = rootgrp.createDimension('npcatvals',npcats)
-npcat_indices = rootgrp.createVariable('npcat_indices','i4',('npcatvals',))
-npcat_indices.long_name = "indices for discretization of arrays by "+\
-    "ensemble-mean precipitation forecast amounts"
-npcat_indices.units = "n/a"
-
-# ---- (4c) initialize the arrays that will hold the data 
-
-precip_values = rootgrp.createVariable('precip_values','f4',('npvals',), \
-    zlib=True,least_significant_digit=3)
-precip_values.units = "mm"
-precip_values.long_name = \
-    "precipitation values where fraction zero, Gamma shape, Gamma scale are estimated"
-precip_values.valid_range = [0.,500.]
-precip_values.missing_value = -99.99
-
-fraction_zeros = rootgrp.createVariable('fraction_zeros','f4',('nlo_int_hi_vals','npcatvals','npvals',), \
-    zlib=True,least_significant_digit=4)
-fraction_zeros.units = "n/a"
-fraction_zeros.long_name = \
-    "Fraction of samples with analyzed precipitation = 0"
-fraction_zeros.valid_range = [0.,1.]
-fraction_zeros.missing_value = -99.99
-
-fraction_zeros_fclimpop = rootgrp.createVariable('fraction_zeros_fclimpop','f4',('nclim_p1_vals',), \
-    zlib=True,least_significant_digit=4)
-fraction_zeros_fclimpop.units = "n/a"
-fraction_zeros_fclimpop.long_name = "Fraction of samples where analyzed precipitation = 0 "+\
-    "when mean forecast ~=0. (as function of climatological POP)"
-fraction_zeros_fclimpop.valid_range = [0.,1.]
-fraction_zeros_fclimpop.missing_value = -99.99
-
-climo_pop_thresholds = rootgrp.createVariable('climo_pop_thresholds','f4',('nclim_vals',), \
-    zlib=True,least_significant_digit=4)
-climo_pop_thresholds.units = "n/a"
-climo_pop_thresholds.long_name = "Threshold of POP climatology for "+\
-    "defining fraction zero and gamma distribution parameters when ens-mean forecast precip ~= 0"
-climo_pop_thresholds.valid_range = [0.,1.]
-climo_pop_thresholds.missing_value = -99.99
-
-gamma_shapes = rootgrp.createVariable('gamma_shapes','f4',('nlo_int_hi_vals','npcatvals','npvals',), \
-    zlib=True,least_significant_digit=3)
-gamma_shapes.units = "n/a"
-gamma_shapes.long_name = "Gamma distribution shape parameter (alpha)"
-gamma_shapes.valid_range = [0.,1200.]
-gamma_shapes.missing_value = -99.99
-
-gamma_scales = rootgrp.createVariable('gamma_scales','f4',('nlo_int_hi_vals','npcatvals','npvals',), \
-    zlib=True,least_significant_digit=3)
-gamma_scales.units = "n/a"
-gamma_scales.long_name =  "Gamma distribution scale parameter (beta)"
-gamma_scales.valid_range = [0.,1200.]
-gamma_scales.missing_value = -99.99
-
-gamma_shape_fclimpop = rootgrp.createVariable('gamma_shape_fclimpop','f4',('nclim_p1_vals',), \
-    zlib=True,least_significant_digit=4)
-gamma_shape_fclimpop.units = "n/a"
-gamma_shape_fclimpop.long_name = "Gamma shape parameter for nonzero analyzed precipitation" + \
-    " where mean precip ~=0 as function of climatological POP"
-gamma_shape_fclimpop.valid_range = [0.,100.]
-gamma_shape_fclimpop.missing_value = -99.99
-
-gamma_scale_fclimpop = rootgrp.createVariable('gamma_scale_fclimpop','f4',('nclim_p1_vals',), \
-    zlib=True,least_significant_digit=4)
-gamma_scale_fclimpop.units = "n/a"
-gamma_scale_fclimpop.long_name = "Gamma scale parameter for nonzero analyzed precipitation " + \
-    " where mean precip ~=0 as function of climatological POP"
-gamma_scale_fclimpop.valid_range = [0.,100.]
-gamma_scale_fclimpop.missing_value = -99.99
-
-precip_thresholds =  rootgrp.createVariable('precip_thresholds','f4',('npcatvals',), \
-    zlib=True,least_significant_digit=4)
-precip_thresholds.units = "n/a"
-precip_thresholds.long_name = \
-    "Precipitation amounts that define borders between no, light, mod, heavy precip"
-precip_thresholds.valid_range = [0.,100.]
-precip_thresholds.missing_value = -99.99
-
-# --- (4d) write calculated values for netcdf file indices and variables
-
-nclim_indices[:] = range(nclim)
-npvals_indices = range(npv)
-nclim_p1_indices = range(nclim_p1)
-nlo_int_hi_indices = range(nlo_int_hi) 
-npcat_indices = range(npcats)
-
-precip_values[:] = gamma_threshes[:]
-fraction_zeros[:,:,:] = fraction_zero[:,:,:]
-gamma_shapes[:,:,:] = gamma_shape[:,:,:]
-gamma_scales[:,:,:] = gamma_scale[:,:,:]
-fraction_zeros_fclimpop[:] = fraction_zero_meanzero_fclim[:]
-gamma_shape_fclimpop[:] = gamma_shape_meanzero_fclim[:]
-gamma_scale_fclimpop[:] = gamma_scale_meanzero_fclim[:]
-
-climo_pop_thresholds[:] = climo_pop_thresholds_save[:]
-precip_thresholds[:] = np.array([np.float(thresh_light), np.float(thresh_mod), np.float(thresh_high)])
-
-# ---- (4e) more metadata
-
-rootgrp.stream = "s4" # ????
-rootgrp.title = "Best-member dressing statistics for National Blend "+cmodel+" multi-model ensemble"
-rootgrp.Conventions = "CF-1.0"  # ????
-rootgrp.history = "Created ~ July 2017 by Tom Hamill, tom.hamill@noaa.gov"
-rootgrp.institution = "NOAA/ESRL/PSD"
-rootgrp.platform = "Model"
-rootgrp.references = "None"
-
-# ---- (4f) close the file
-
-rootgrp.close()
-
-
-# ======================================================================
-# ---- PART 5:  Save the closest-member histogram info to netcdf files
-# ======================================================================
-
-# ---- (5a) define netCDF file name for gamma distribution parameters and open
-#      the file
-
-outfile_nc = '/Users/thamill/precip/ecmwf_data/closest_histogram_'+\
-    cmodel+'_lead='+cleade+'.nc'
-print 'writing netCDF closest histogram data to ',outfile_nc
-rootgrp = Dataset(outfile_nc,'w',format='NETCDF4_CLASSIC')
-
-# ---- (5b) declare array dimensions, indices for arrays
-
-npcats = 3 
-npcatvals = rootgrp.createDimension('npcatvals',npcats)
-npcat_indices = rootgrp.createVariable('npcat_indices','i4',('npcatvals',))
-npcat_indices.long_name = "indices for discretization of arrays by '+\
-    'ensemble-mean precipitation forecast amounts"
-npcat_indices.units = "n/a"
-
-nmembervals = rootgrp.createDimension('nmembervals',nmembersx25)
-nmember_indices = rootgrp.createVariable('nmember_indices','i4',('nmembervals',))
-nmember_indices.long_name = "sorted ensemble member number"
-nmember_indices.units = "n/a"
-
-# ---- (5c) declare arrays that will hold the dressing data
-
-precip_thresholds =  rootgrp.createVariable('precip_thresholds','f4',('npcatvals',), \
-    zlib=True,least_significant_digit=4)
-precip_thresholds.units = "n/a"
-precip_thresholds.long_name = \
-    "Precipitation amounts that define borders between no, light, mod, heavy precip"
-precip_thresholds.valid_range = [0.,100.]
-precip_thresholds.missing_value = -99.99
-
-closest_histogram = rootgrp.createVariable('closest_histogram','f4',('npcatvals','nmembervals',), \
-    zlib=True,least_significant_digit=6)
-closest_histogram.units = "n/a"
-closest_histogram.long_name = \
-    "histogram of how often this sorted member is the closet to analyzed value"
-closest_histogram.valid_range = [0.,1.]
-closest_histogram.missing_value = -99.99
-
-# --- (5d) write calculated values for netcdf file indices and variables
-
-npcat_indices = range(npcats)
-precip_thresholds[:] = np.array([np.float(thresh_light), np.float(thresh_mod), np.float(thresh_high)])
-nmember_indices[:] = range(nmembersx25)
-closest_histogram[:,:] = closest_histogram_savgol[:,:]
-
-# ---- (5e) more metadata
-
-rootgrp.stream = "s4" # ????
-rootgrp.title = "histograms of how often this sorted member is the closet to analyzed value for "+cmodel
-rootgrp.Conventions = "CF-1.0"  # ????
-rootgrp.history = "Created ~ June 2017 by Tom Hamill, tom.hamill@noaa.gov"
-rootgrp.institution = "NOAA/ESRL/PSD"
-rootgrp.platform = "Model"
-rootgrp.references = "None"
-
-# ---- (5f) close the file, and done
-
-rootgrp.close()
 
 
 
