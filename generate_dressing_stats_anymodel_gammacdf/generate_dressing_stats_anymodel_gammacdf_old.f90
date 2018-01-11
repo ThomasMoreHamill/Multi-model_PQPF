@@ -13,13 +13,9 @@ PROGRAM generate_dressing_stats_anymodel_gammacdf
 ! that have zero precipitation).
 ! 
 ! coded by Tom Hamill, Aug 2017. tom.hamill@noaa.gov, (303) 497-3060
-
-! revised to allow CDFs to be estimated empirically or with Gamma distributions.
   
 USE netcdf
 
-INTEGER, PARAMETER :: empirical = 1! if = 1 use empirical, else use synthesized 
-! information to build Gamma CDFs for quantile mapping
 INTEGER, PARAMETER :: nxa = 464  ! number of grid pts in x-dir for 1/8-deg analysis grid
 INTEGER, PARAMETER :: nya = 224  ! number of grid pts in y-dir for 1/8-deg analysis grid 
 INTEGER, PARAMETER :: n25 = 25
@@ -85,8 +81,6 @@ REAL, ALLOCATABLE, DIMENSION(:,:,:) :: fraction_zero_qmap_forecast ! same but fr
 REAL, ALLOCATABLE, DIMENSION(:,:) :: gamma_shape_qmap_analysis ! same but for analyzed data
 REAL, ALLOCATABLE, DIMENSION(:,:) :: gamma_scale_qmap_analysis
 REAL, ALLOCATABLE, DIMENSION(:,:) :: fraction_zero_qmap_analysis
-REAL, ALLOCATABLE, DIMENSION(:,:,:) :: precip_anal_cdf
-REAL, ALLOCATABLE, DIMENSION(:,:,:,:) :: ensemble_cdf
 
 ! ---- x25 array
 
@@ -240,6 +234,8 @@ CALL read_precip_climatology_local(nxa, nya, &
 ! ---- read the precipitation analysis valid for this lead time.
 !      the input file was created by the python script ccpa_to_netcdf.py
 
+!infile = TRIM(data_directory)//&
+!    'precip_ccpav1_2002010200_to_2016123100.nc'
 infile = TRIM(data_directory)//&    
     'precip_analyses_ccpa_v1_2002010100_to_2016123100.nc'
 PRINT *,'reading precipitation analysis from ', TRIM(infile)
@@ -281,67 +277,39 @@ PRINT *,'min, maxval(ensemble_ccpa) in driver = ', &
 
 IF (MAXVAL(ensemble_mean) .gt. 0.0) THEN  ! only if so is data for this date ok 
   
-    IF (empirical .eq. 1) THEN
-        
-        ! --- read in forecast and analyzed CDFs at pre-defined precipitation amounts.
-        
-        ALLOCATE(precip_anal_cdf(nxa,nya,npct))
-        ALLOCATE(ensemble_cdf(nxa,nya,nens_qmap,npct))
-        
-        PRINT *,'calling read_cdf_netcdf_anal_forecast'
-        CALL read_cdf_netcdf_anal_forecast(nxa, nya, npct, nens_qmap, iyyyymmddhh, &
-            cleade, cmodel, data_directory, precip_anal_cdf, ensemble_cdf, thresh)
-            
-        CALL control_ensemble_quantile_mapping_x25(nxa, nya, npct, nstride, &
-            nens, nens_qmap, n25, data_directory, cyyyymmddhh, cmodel, cleade, &
-            thresh, conusmask, precip_anal_cdf, &
-            ensemble_cdf, ensemble_ccpa, ensemble_ccpa_x25)
-            
-        DEALLOCATE(precip_anal_cdf, ensemble_cdf)
-        
-    ELSE
-
-        ! --- this subroutine will read in the previous 60 days of synthesized
-        !     information on Gamma distributions as well as supplemental location 
-        !     information, calculating for each grid point an estimated fraction
-        !     zero (fraction of the samples with zero precip amount) and Gamma 
-        !     distribution parameters shape (alpha) and scale (beta).  This is done
-        !     for both forecast and analyzed data.
+    ! --- this subroutine will read in the previous 60 days of synthesized
+    !     information on Gamma distributions as well as supplemental location 
+    !     information, calculating for each grid point an estimated fraction
+    !     zero (fraction of the samples with zero precip amount) and Gamma 
+    !     distribution parameters shape (alpha) and scale (beta).  This is done
+    !     for both forecast and analyzed data.
   
-        PRINT *,'calling determine_gamma_parameters_for_quantile_mapping'
-        CALL determine_gamma_parameters_for_quantile_mapping(nxa, nya, &
-            iyyyymmddhh, imonth, nens_qmap, data_directory, cmodel, cleade, &
-            cmonths, conusmask, gamma_shape_qmap_forecast, gamma_scale_qmap_forecast, &
-            fraction_zero_qmap_forecast, gamma_shape_qmap_analysis, &
-            gamma_scale_qmap_analysis, fraction_zero_qmap_analysis)
+    PRINT *,'calling determine_gamma_parameters_for_quantile_mapping'
+    CALL determine_gamma_parameters_for_quantile_mapping(nxa, nya, &
+        iyyyymmddhh, imonth, nens_qmap, data_directory, cmodel, cleade, &
+        cmonths, conusmask, gamma_shape_qmap_forecast, gamma_scale_qmap_forecast, &
+        fraction_zero_qmap_forecast, gamma_shape_qmap_analysis, &
+        gamma_scale_qmap_analysis, fraction_zero_qmap_analysis)
     
-        ! ---- perform the quantile mapping using the data at a stencil of 
-        !      5 x 5 grid points surrounding the point in question (which is
-        !      at the center of the array).  Populate the _x25 arrays with 
-        !      the 5 x 5 stencil of quantile-mapped values
+    ! ---- perform the quantile mapping using the data at a stencil of 
+    !      5 x 5 grid points surrounding the point in question (which is
+    !      at the center of the array).  Populate the _x25 arrays with 
+    !      the 5 x 5 stencil of quantile-mapped values
 
-        PRINT *,'calling control_quantile_mapping_singlemodel_gamma'
-        CALL control_quantile_mapping_singlemodel_gamma(nxa, nya, &
-            nstride, nens, nens_qmap, n25, exchangeable, conusmask, &
-            ensemble_ccpa, gamma_shape_qmap_forecast, &
-            gamma_scale_qmap_forecast, fraction_zero_qmap_forecast, &
-            gamma_shape_qmap_analysis, gamma_scale_qmap_analysis, &
-            fraction_zero_qmap_analysis, ensemble_ccpa_x25)
-            
-        !PRINT *, 'min,max ensemble_ccpa_x25 = ',minval(ensemble_ccpa_x25), &
-        !    maxval(ensemble_ccpa_x25)
-    ENDIF
+    PRINT *,'calling control_quantile_mapping_singlemodel_gamma'
+    CALL control_quantile_mapping_singlemodel_gamma(nxa, nya, &
+        nstride, nens, nens_qmap, n25, exchangeable, conusmask, &
+        ensemble_ccpa, gamma_shape_qmap_forecast, &
+        gamma_scale_qmap_forecast, fraction_zero_qmap_forecast, &
+        gamma_shape_qmap_analysis, gamma_scale_qmap_analysis, &
+        fraction_zero_qmap_analysis, ensemble_ccpa_x25)
         
     ! ---- tally up the information needed to generate dressing statistics
     !      and write the resulting information for this day to a netCDF file
 
-    IF (empirical .eq.  1) THEN
-        outfile_nc = TRIM(data_directory) // 'gamma_and_closest_hist_stats_'//&
-            TRIM(cprefix)//'_'//cyyyymmddhh//'_fhour'//TRIM(cleade)//'.nc'
-    ELSE
-        outfile_nc = TRIM(data_directory) // 'gamma_and_closest_hist_stats_'//&
-            TRIM(cprefix)//'_'//cyyyymmddhh//'_fhour'//TRIM(cleade)//'_gammaqmap.nc'
-    ENDIF
+    outfile_nc = TRIM(data_directory) // 'gamma_and_closest_hist_stats_'//&
+        TRIM(cprefix)//'_'//cyyyymmddhh//'_fhour'//TRIM(cleade)//'.nc'
+    !PRINT *,'will write netcdf output data to ', TRIM(outfile_nc)
     
     CALL tally_gamma_stats_full_n25 (n25, nxa, nya, nens, &
         n_climocats, nthreshes, nout_thresh, thresh_light, &

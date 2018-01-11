@@ -77,9 +77,26 @@ DO ipct = 1, npct-1
            		SUM((f95_to_f99(2:5) - f95_to_f99(1))**2)
      		    forecast_interpolated = a95_to_a99(1) + &
 					(forecast-f95_to_f99(1))*slope
+
+                IF (forecast_interpolated .gt. 25.) THEN            
+                    rmaxmult = 1 + 0.5*exp(-(forecast_interpolated-25.)**2/625.)
+                    IF (forecast .gt. 25.0) rmaxmult = MIN(rmaxmult, forecast_interpolated/forecast)
+                    forecast_interpolated = forecast*rmaxmult
+                ENDIF
+                    
+                    
   			ELSE
      		    forecast_interpolated = forecast
   		  	ENDIF 
+            
+            
+            
+            
+            
+
+            
+            
+            
 
   		  	GOTO 3000
 

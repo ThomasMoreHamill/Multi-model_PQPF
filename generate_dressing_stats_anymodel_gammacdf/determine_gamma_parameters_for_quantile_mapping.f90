@@ -72,9 +72,7 @@ CALL check(nf90_inquire_dimension(ncid,idimid,cvar,nya_large))
 cvar = "xsupp"
 CALL check(nf90_inq_dimid(ncid,cvar,idimid))
 CALL check(nf90_inquire_dimension(ncid,idimid,cvar,nsupp))
-print *,'after xsupp'
-    
-PRINT *,'nxa_large, nya_large, nsupp = ', nxa_large, nya_large, nsupp
+
 ALLOCATE(xlocations(nxa,nya,nsupp), xlocations_largedomain(nxa_large, nya_large, nsupp))    
 ALLOCATE(ylocations(nxa,nya,nsupp), ylocations_largedomain(nxa_large, nya_large, nsupp))     
 ALLOCATE(nsupplemental(nxa,nya), nsupplemental_largedomain(nxa_large, nya_large)) 
@@ -118,8 +116,8 @@ DO jya = 1, nya
             IF (nsupplemental(ixa,jya) .eq. 0) THEN
                 PRINT *,'invalid nsupplemental value at ixa,jya = ',ixa,jya
                 PRINT *,'stopping'
-                stop
-            endif
+                STOP
+            END IF
             DO isupp = 1, nsupplemental(ixa,jya)
                 xlocations(ixa,jya,isupp) = xlocations(ixa,jya,isupp) - xoffset 
                 ylocations(ixa,jya,isupp) = ylocations(ixa,jya,isupp) - yoffset
@@ -127,7 +125,6 @@ DO jya = 1, nya
         ENDIF
     END DO
 END DO
-print *,'after shifting'
                 
 ! ---- now, for the input date and the forecast lead time, we are going to read
 !      in the prior 60 days of information necessary to build the gamma CDFs.
@@ -177,16 +174,16 @@ DO iday = ndayshift-60, ndayshift-1
 
 
     ishift_in_hours = iday*24
-    print *,'iday, ishift_in_hours,iyyyymmddhh = ', iday, ishift_in_hours,iyyyymmddhh
+    !PRINT *,'iday, ishift_in_hours,iyyyymmddhh = ', iday, ishift_in_hours,iyyyymmddhh
     CALL updat(iyyyymmddhh,ishift_in_hours,jyyyymmddhh)
     WRITE (cyyyymmddhh,'(i10)') jyyyymmddhh
-    PRINT *,'jyyyymmddhh, cyyyymmddhh = ', jyyyymmddhh, cyyyymmddhh
+    !PRINT *,'jyyyymmddhh, cyyyymmddhh = ', jyyyymmddhh, cyyyymmddhh
     
     ! ---- build filename, read in this day's information
     
-    infile = TRIM(data_directory) // TRIM(cmodel) // &
+    infile = TRIM(data_directory) // TRIM(cmodel) // '/' // TRIM(cmodel) // &
         '_D_statistics_data_IC' //cyyyymmddhh // '_' // TRIM(cleade) // 'h.nc'
-    print *,'reading from ', infile
+    PRINT *,'reading from ', infile
     INQUIRE (file = infile, exist=exist)
     IF (exist) THEN
 
@@ -232,14 +229,14 @@ DO iday = ndayshift-60, ndayshift-1
     
         CALL check(nf90_close(ncid))
     
-        PRINT *,'npositive_analysis(1:nxa:5, nya/2) = ', &
-            npositive_analysis(1:nxa:5, nya/2)
-        PRINT *,'nzeros_analysis(1:nxa:5, nya/2) = ', &
-            nzeros_analysis(1:nxa:5, nya/2)
-        PRINT *,'sumx_analysis(1:nxa:5, nya/2) = ', &
-            sumx_analysis(1:nxa:5, nya/2)        
-        PRINT *,'sumlnx_analysis(1:nxa:5, nya/2) = ', &
-            sumlnx_analysis(1:nxa:5, nya/2)  
+        !PRINT *,'npositive_analysis(1:nxa:5, nya/2) = ', &
+        !    npositive_analysis(1:nxa:5, nya/2)
+        !PRINT *,'nzeros_analysis(1:nxa:5, nya/2) = ', &
+        !    nzeros_analysis(1:nxa:5, nya/2)
+        !PRINT *,'sumx_analysis(1:nxa:5, nya/2) = ', &
+        !    sumx_analysis(1:nxa:5, nya/2)        
+        !PRINT *,'sumlnx_analysis(1:nxa:5, nya/2) = ', &
+        !    sumlnx_analysis(1:nxa:5, nya/2)  
     
         sumx_analysis_multiday = sumx_analysis_multiday + sumx_analysis
         sumlnx_analysis_multiday = sumlnx_analysis_multiday + sumlnx_analysis
@@ -250,6 +247,8 @@ DO iday = ndayshift-60, ndayshift-1
         sumlnx_forecast_multiday = sumlnx_forecast_multiday + sumlnx_forecast
         npositive_forecast_multiday = npositive_forecast_multiday + INT(npositive_forecast)
         nzeros_forecast_multiday = nzeros_forecast_multiday + INT(nzeros_forecast)
+    ELSE
+        PRINT *,'could not find file!'
     END IF 
 END DO
 
@@ -294,7 +293,8 @@ DO jya = 1, nya
                             nzeros_forecast_multiday(ixn,jyn,imem)
                     END DO
                 ELSE
-                    PRINT *,'when processing ixa, jya = ',ixa, jya,' id supplemental outside CONUS',ixn,jyn
+                    PRINT *, 'Problem detected in determine_gamma_parameters_for_quantile_mapping'
+                    PRINT *, 'when processing ixa, jya = ',ixa, jya,' id supplemental outside CONUS',ixn,jyn
                     STOP
                 ENDIF
             END DO
@@ -302,15 +302,15 @@ DO jya = 1, nya
     END DO
 END DO   
 
-PRINT *,'sumx_analysis(:,nya/2) = ',sumx_analysis(:,nya/2)
-PRINT *,'sumlnx_analysis(:,nya/2) = ',sumlnx_analysis(:,nya/2)
-PRINT *,'npositive_analysis_final(:,nya/2) = ', npositive_analysis_final(:,nya/2)
-PRINT *,'nzeros_analysis_final(:,nya/2) = ', nzeros_analysis_final(:,nya/2)
+!PRINT *,'sumx_analysis(:,nya/2) = ',sumx_analysis(:,nya/2)
+!PRINT *,'sumlnx_analysis(:,nya/2) = ',sumlnx_analysis(:,nya/2)
+!PRINT *,'npositive_analysis_final(:,nya/2) = ', npositive_analysis_final(:,nya/2)
+!PRINT *,'nzeros_analysis_final(:,nya/2) = ', nzeros_analysis_final(:,nya/2)
 
-PRINT *,'sumx_forecast(:,nya/2,1) = ',sumx_forecast(:,nya/2,1)
-PRINT *,'sumlnx_forecast(:,nya/2,1) = ',sumlnx_forecast(:,nya/2,1)
-PRINT *,'npositive_forecast_final(:,nya/2,1) = ', npositive_forecast_final(:,nya/2,1)
-PRINT *,'nzeros_forecast_final(:,nya/2,1) = ', nzeros_forecast_final(:,nya/2,1)
+!PRINT *,'sumx_forecast(:,nya/2,1) = ',sumx_forecast(:,nya/2,1)
+!PRINT *,'sumlnx_forecast(:,nya/2,1) = ',sumlnx_forecast(:,nya/2,1)
+!PRINT *,'npositive_forecast_final(:,nya/2,1) = ', npositive_forecast_final(:,nya/2,1)
+!PRINT *,'nzeros_forecast_final(:,nya/2,1) = ', nzeros_forecast_final(:,nya/2,1)
     
 ! ---- calculate D statistic and from that Gamma distribution parameters and fraction zero.
 
@@ -354,6 +354,14 @@ DO jya = 1, nya
         ENDIF
     END DO
 END DO    
+
+!PRINT  *,'ixa    anal sh   fcst sh   anal sc   fcst sc   fz anal   fz fcst'
+!DO ixa = 1, nxa, 10
+!    PRINT 684, ixa, gamma_shape_qmap_analysis(ixa,nya/2), gamma_shape_qmap_forecast(ixa,nya/2,1), &
+!        gamma_scale_qmap_analysis(ixa,nya/2), gamma_scale_qmap_forecast(ixa,nya/2,1), &
+!        fraction_zero_qmap_analysis(ixa,nya/2),  fraction_zero_qmap_forecast(ixa,nya/2,1)
+!        684 FORMAT(i3,6(2x,f8.4))
+!END DO
 
 !PRINT *,'sample gamma shape statistic for analysis = ', &
 !    gamma_shape_qmap_analysis(1:nxa:5,nya/2)

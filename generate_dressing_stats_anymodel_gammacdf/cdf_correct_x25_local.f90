@@ -64,7 +64,8 @@ DO jya = 1, nya
                   		  	acdf(:) = analysis_cdf(ixa,jya,:)
                 
                             CALL quantile_map (npct, thresh, forecast(ixn,jyn), fcdf, acdf, &
-                                forecast_x25(ktr,ixa,jya))
+                                forecast_x25(ktr,ixa,jya))        
+                                
                                     
                   	 	ELSE ! conusmask, forecast>0
 							forecast_x25(ktr,ixa,jya) = forecast(ixn,jyn)

@@ -1,9 +1,9 @@
 SUBROUTINE read_precipitation_analysis(nxa,nya,&
 	iyyyymmddhh_end, infile, analysis, istat)
 
-    ! read in the two 6-hourly precipitation analyses,
-    ! sum, and return that after making sure that
-    ! missing values are set to -99.99
+! read in the two 6-hourly precipitation analyses,
+! sum, and return that after making sure that
+! missing values are set to -99.99
 
 USE netcdf
 	
@@ -22,18 +22,18 @@ REAL, DIMENSION(nxa, nya) :: analysis_early, analysis_late
 ! ---- open the file
 
 netid = 0
-CALL check (nf90_open(infile,NF90_NOWRITE,netid))
+CALL check (nf90_open(infile, NF90_NOWRITE, netid))
 
 ! ---- read in the list of dates/times in yyyymmddhh format associated with
 !      each time index stored in the netcdf file
 
-print *,'time'
+!print *,'time'
 cfield ='time'
 CALL check(nf90_inq_dimid(netid,trim(adjustl(cfield)),ivar))
 CALL check(nf90_inquire_dimension(netid,ivar,cfield,ntimes))
 ALLOCATE (iyyyymmddhh_anal(ntimes))
 
-print *,'yyyymmddhh_anal_end'
+!print *,'yyyymmddhh_anal_end'
 cfield ='yyyymmddhh_anal_end'
 CALL check(nf90_inq_varid(netid,trim(adjustl(cfield)),ivar))
 CALL check(nf90_get_var(netid,ivar,iyyyymmddhh_anal,&
@@ -52,7 +52,7 @@ END DO
 
 IF (ifound .eq. 1) THEN
 	cfield = 'apcp_anal'
-    print *,'apcp_anal'
+    !print *,'apcp_anal'
     CALL check (nf90_inq_varid(netid,trim(adjustl(cfield)),ivar))
 	PRINT *,'trying to read analysis, records ',&
         itime, itime-1,' nxa, nya = ', nxa, nya

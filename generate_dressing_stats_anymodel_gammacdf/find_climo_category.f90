@@ -24,5 +24,11 @@ DO icat = 1, nccats+1
 END DO
 
 6000 RETURN
+IF (iclim .lt. 1 .or. iclim .gt. nccats+1) THEN
+    PRINT *,'invalid climatology category found in find_climo_category.  Stopping'
+    STOP
+ENDIF
+
+
 END SUBROUTINE find_climo_category
 	

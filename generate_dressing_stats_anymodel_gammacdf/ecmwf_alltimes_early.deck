@@ -1,0 +1,6 @@
+#!/bin/tcsh
+
+ecmwf_24.deck	
+ecmwf_48.deck
+ecmwf_72.deck	
+	

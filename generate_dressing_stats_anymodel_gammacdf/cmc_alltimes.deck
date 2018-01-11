@@ -1,0 +1,14 @@
+#!/bin/tcsh
+
+
+
+cmc_24.deck	
+cmc_48.deck	
+cmc_72.deck	
+cmc_96.deck	
+cmc_120.deck	
+cmc_144.deck	
+cmc_168.deck
+
+
+

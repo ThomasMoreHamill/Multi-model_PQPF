@@ -1,0 +1,14 @@
+#!/bin/tcsh
+
+ncep_24.deck
+ncep_48.deck
+ncep_72.deck
+ncep_96.deck
+ncep_120.deck	
+ncep_144.deck	
+ncep_168.deck	
+
+
+
+
+
